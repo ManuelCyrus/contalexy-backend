@@ -34,6 +34,7 @@ const REPLIES = {
     notUnderstood: 'Não percebi. Escreve o valor e o que foi, por exemplo: "12,50 café" ou "recebi 100 freelance", ou manda a foto da fatura.',
     scanFailed: 'Não consegui ler a fatura. Tenta outra foto, mais nítida.',
     quota: 'A leitura de faturas por IA está no limite deste período. Podes escrever o valor à mão: "12,50 café".',
+    dailyLimit: 'Chegaste ao limite de mensagens de hoje. Amanhã volta a funcionar; até lá regista na app.',
   },
   en: {
     notLinked: 'This number is not linked to a Contalexy account yet. In the app: Settings > WhatsApp > Link, and send the code here.',
@@ -43,6 +44,7 @@ const REPLIES = {
     notUnderstood: 'I did not understand. Write the amount and what it was, e.g. "12.50 coffee" or "received 100 freelance", or send a photo of the receipt.',
     scanFailed: 'Could not read the receipt. Try another, sharper photo.',
     quota: 'AI receipt reading reached its limit for this period. You can type the amount: "12.50 coffee".',
+    dailyLimit: 'You reached today’s message limit. It works again tomorrow; until then, use the app.',
   },
 };
 
@@ -152,6 +154,16 @@ export class WhatsappService {
   private async handleMessage(message: WaMessage) {
     const phone = message.from.replace(/[^\d]/g, '');
     const text = message.text?.body?.trim() ?? message.image?.caption?.trim() ?? '';
+
+    // Limite por número e por dia: protege contra spam e contra custos de mensagens.
+    // Ao passar o limite responde-se uma vez e as seguintes são ignoradas até amanhã.
+    const day = await this.redis.hit(`wa:day:${phone}`, 24 * 3600);
+    const max = env().WHATSAPP_DAILY_LIMIT;
+    if (day.count > max) {
+      if (day.count === max + 1) await this.reply(phone, this.t('pt', 'dailyLimit') + '\n\n' + this.t('en', 'dailyLimit'));
+      return;
+    }
+
     const link = await this.prisma.whatsappLink.findFirst({ where: { phone, isActive: true }, include: { user: { select: { id: true, language: true, currency: true, timezone: true } } } });
 
     // Sem ligação: só um código de ligação válido faz alguma coisa.
@@ -159,7 +171,8 @@ export class WhatsappService {
       const code = text.toUpperCase().match(/CX-[A-Z0-9]{6}/)?.[0];
       const pending = code ? await this.prisma.whatsappLink.findFirst({ where: { linkCode: code, linkCodeExpiresAt: { gt: new Date() } }, include: { user: { select: { language: true } } } }) : null;
       if (!pending) {
-        await this.reply(phone, this.t('pt', 'notLinked') + '\n\n' + this.t('en', 'notLinked'));
+        // A quem não tem conta ligada explica-se uma vez por dia, não a cada mensagem.
+        if (await this.redis.lock(`wa:notlinked:${phone}`, 24 * 3600)) await this.reply(phone, this.t('pt', 'notLinked') + '\n\n' + this.t('en', 'notLinked'));
         return;
       }
       // Este número deixa de estar ligado a outra conta, se estava.

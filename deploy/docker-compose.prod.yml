@@ -1,0 +1,50 @@
+# Serviços de apoio da API em produção: PostgreSQL e Redis.
+# A API em si não está aqui: corre em dois contentores (azul e verde) geridos
+# por deploy.sh, para trocar de versão sem parar.
+#
+#   docker compose -f deploy/docker-compose.prod.yml --env-file .env up -d
+name: contalex
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-rumo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD no .env}
+      POSTGRES_DB: ${POSTGRES_DB:-rumo}
+    # Só acessível a partir do próprio servidor (para backups e psql), nunca da internet.
+    ports:
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
+    volumes:
+      - pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rumo} -d ${POSTGRES_DB:-rumo}"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    networks: [contalex]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    volumes:
+      - redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    networks: [contalex]
+
+volumes:
+  # O mesmo volume que o docker-compose.yml de desenvolvimento usava: se a base
+  # já existia neste servidor, os dados continuam lá.
+  pg:
+    name: rumo-backend_rumo_pg
+  redis:
+    name: contalex_redis
+
+networks:
+  contalex:
+    name: contalex

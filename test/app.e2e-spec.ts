@@ -2430,6 +2430,13 @@ describe('Contalexy API (e2e)', () => {
     expect((await api().patch(`/admin/users/${chefe.user.id}/role`, { role: 'ADMIN', areas: ['users'] }, C)).status).toBe(400);
     await api().patch(`/admin/users/${nina.user.id}/role`, { role: 'USER' }, C).expect(200);
     expect((await api().get('/admin/users', N)).status).toBe(403);
+    // O primeiro admin (o mais antigo) não pode ser despromovido por outro admin, mesmo com acesso a tudo.
+    const first = await prisma.user.findFirst({ where: { role: 'ADMIN' }, orderBy: { createdAt: 'asc' }, select: { id: true } });
+    await prisma.user.update({ where: { id: nina.user.id }, data: { role: 'ADMIN', adminAreas: [] } });
+    const demote = await api().patch(`/admin/users/${first!.id}/role`, { role: 'USER' }, N);
+    expect(demote.status).toBe(403);
+    expect(demote.body.error.code).toBe('ADMIN_PROTECTED');
+    await prisma.user.update({ where: { id: nina.user.id }, data: { role: 'USER', adminAreas: [] } });
 
     // --- A lista de utilizadores mostra os créditos de IA e a data de nascimento.
     await api().post(`/admin/users/${nina.user.id}/credits`, { credits: 25, note: 'boas-vindas' }, C).expect(200);

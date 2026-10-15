@@ -39,14 +39,20 @@ async function bootstrap() {
   app.setGlobalPrefix('v1');
   app.use(new RequestIdMiddleware().use);
 
-  // Fotos de perfil (públicas). Os recibos NÃO estão aqui — só por /v1/files/:id.
-  const avatars = resolve(join(config.UPLOADS_DIR, 'avatars'));
-  mkdirSync(avatars, { recursive: true });
-  app.useStaticAssets(avatars, { prefix: '/public/avatars', maxAge: '7d' });
+  // Fotos de perfil (públicas), só quando os ficheiros ficam no disco. Com
+  // STORAGE_DRIVER=s3 nada é escrito no servidor: vai tudo para o bucket.
+  // Os recibos NÃO estão aqui — só por /v1/files/:id.
+  if (config.STORAGE_DRIVER === 'local') {
+    const avatars = resolve(join(config.UPLOADS_DIR, 'avatars'));
+    mkdirSync(avatars, { recursive: true });
+    app.useStaticAssets(avatars, { prefix: '/public/avatars', maxAge: '7d' });
+  }
 
   app.enableShutdownHooks();
   await app.listen(config.PORT, '0.0.0.0');
   console.log(`Contalexy API a correr em http://localhost:${config.PORT}/v1`);
+  if (config.NODE_ENV === 'production' && config.BILLING_ACCEPT_SANDBOX === 'true') console.warn('Atenção: BILLING_ACCEPT_SANDBOX=true em produção. Compras de teste dão acesso ao Premium; volta a false depois da revisão da Apple.');
+  console.log(config.STORAGE_DRIVER === 's3' ? `Ficheiros: S3 (bucket ${config.S3_BUCKET}${config.S3_ENDPOINT ? `, ${config.S3_ENDPOINT}` : ''})` : `Ficheiros: disco local (${resolve(config.UPLOADS_DIR)})`);
 }
 
 bootstrap().catch((err: unknown) => {

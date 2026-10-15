@@ -5,7 +5,7 @@ import { SubscriptionsService } from '../billing/subscriptions.service';
 import { ExchangeService } from '../exchange/exchange.service';
 import { AiBudgetService } from '../ai/ai-budget.service';
 import { ApiException } from '../common/errors/api.exception';
-import { adminAreasOf, isAdminUser } from '../common/utils/admin';
+import { adminAreasOf, isAdminUser, isSuperAdminEmail } from '../common/utils/admin';
 import { round2 } from '../common/utils/money';
 import { env } from '../config/env';
 import { Prisma, RevenueEvent, Subscription } from '../generated/prisma/client';
@@ -410,8 +410,14 @@ export class AdminService {
   async setRole(adminId: string, userId: string, role: 'USER' | 'ADMIN', areas: string[] = []) {
     // Para ninguém ficar trancado de fora por engano.
     if (userId === adminId && (role !== 'ADMIN' || areas.length > 0)) throw ApiException.badRequest('INVALID_REQUEST');
-    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true, email: true, role: true } });
     if (!user) throw ApiException.notFound('USER_NOT_FOUND');
+    // O primeiro administrador (o mais antigo) e quem está em ADMIN_EMAILS não
+    // podem ser despromovidos nem limitados por outro admin.
+    if (user.role === 'ADMIN') {
+      const first = await this.prisma.user.findFirst({ where: { role: 'ADMIN' }, orderBy: { createdAt: 'asc' }, select: { id: true } });
+      if (first?.id === userId || isSuperAdminEmail(user.email)) throw ApiException.forbidden('ADMIN_PROTECTED');
+    }
     const updated = await this.prisma.user.update({ where: { id: userId }, data: { role, adminAreas: role === 'ADMIN' ? [...new Set(areas)] : [] }, select: { id: true, role: true, email: true, adminAreas: true } });
     return { id: updated.id, role: updated.role, isAdmin: isAdminUser(updated), adminAreas: adminAreasOf(updated) };
   }

@@ -8,6 +8,9 @@ Contas e movimentos, plano do mês (planeado vs. real), limites por categoria, o
 
 ---
 
+
+**Produção numa VPS (Docker, Redis, nginx, https, lançar sem parar e voltar atrás):** ver [`deploy/README.md`](deploy/README.md).
+
 ## Arrancar em 5 minutos
 
 ```bash
@@ -75,6 +78,14 @@ npx prisma migrate dev --name descricao_da_mudanca
 
 ---
 
+## Ficheiros (recibos, fotos, logótipos)
+
+`STORAGE_DRIVER=local` guarda em `UPLOADS_DIR` (só para desenvolvimento). `STORAGE_DRIVER=s3` manda tudo para o bucket (DigitalOcean Spaces ou S3) e não escreve nada no servidor. Ao arrancar, o backend diz qual está a usar: `Ficheiros: S3 (bucket ...)` ou `Ficheiros: disco local (...)`. Se mudaste o `.env` e continua a dizer "disco local":
+
+1. O processo tem de ser reiniciado (`pm2 restart contalex` ou parar e arrancar de novo); o `.env` só é lido ao arrancar.
+2. Uma variável já definida no ambiente ganha ao `.env` (o pm2 `ecosystem.config.js` com `env: { STORAGE_DRIVER: 'local' }`, um `Environment=` no systemd ou um `environment:` no docker-compose). Confirma com `pm2 env <id>` ou `printenv STORAGE_DRIVER`.
+3. Com `s3` sem `S3_BUCKET`, `S3_ACCESS_KEY` e `S3_SECRET_KEY` os uploads dão `STORAGE_NOT_CONFIGURED` em vez de irem para o disco.
+
 ## Administração (rotas `/v1/admin/*`)
 
 A página de administração está no site (projeto `contalex-web`, em `/admin`); o backend só tem as rotas. Entra-se com uma conta normal da app que seja administradora.
@@ -82,7 +93,7 @@ A página de administração está no site (projeto `contalex-web`, em `/admin`)
 **Quem é administrador?**
 
 1. Quem tiver o email em `ADMIN_EMAILS` (no `.env`, separados por vírgulas). **Cria primeiro a tua conta na app e só depois mete lá o email**: os emails não são confirmados no registo, por isso não ponhas um email que ainda não tenha conta.
-2. Quem um administrador promover (separador *Utilizadores* › *Tornar admin*), escolhendo **a que áreas acede** (`PATCH /admin/users/:id/role` com `areas`; vazio = todas). Quem está em `ADMIN_EMAILS` acede sempre a tudo e é o único que pode tornar outros admins.
+2. Quem um administrador promover (separador *Utilizadores* › *Tornar admin*), escolhendo **a que áreas acede** (`PATCH /admin/users/:id/role` com `areas`; vazio = todas). Quem está em `ADMIN_EMAILS` acede sempre a tudo. Só quem acede a tudo pode tornar outros admins, e **o primeiro administrador (o mais antigo) e os de `ADMIN_EMAILS` nunca podem ser despromovidos nem limitados por outro admin** (`ADMIN_PROTECTED`). Se perderes o acesso por engano, mete o teu email em `ADMIN_EMAILS` e reinicia o backend.
 
 **O que lá está**
 
@@ -296,3 +307,7 @@ Todas as rotas em `/v1`, com `Authorization: Bearer <accessToken>` (exceto as p�
 - **Mensagens**: mensagens curtas (até 1000 caracteres) na conversa de cada Space e a dois. Não há WebSockets: a app pede "só as novas" (`after`) de poucos em poucos segundos enquanto a conversa está aberta. Abrir a conversa dá-a por lida. Os avisos juntam-se **um por conversa** (com `count`), em vez de um por mensagem; o push respeita a preferência `messages`. Apagar uma mensagem tira o texto da base de dados e deixa só o lugar; ao apagar a conta, vão as mensagens que a pessoa escreveu e as conversas a dois em que estava.
 
 Câmbios: [ExchangeRate-API](https://www.exchangerate-api.com) (open.er-api.com), atualizados todos os dias.
+
+
+
+

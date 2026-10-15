@@ -9,6 +9,8 @@ export default defineConfig({
     seed: 'ts-node prisma/seed.ts',
   },
   datasource: {
-    url: env('DATABASE_URL'),
+    // As migrações usam a ligação direta (DIRECT_URL) quando a base é gerida por um
+    // serviço com "pooler" (Neon, Supabase...); a app usa sempre a DATABASE_URL.
+    url: process.env.DIRECT_URL || env('DATABASE_URL'),
   },
 });

@@ -456,7 +456,7 @@ export class PlansService {
         dto.items.map((entry) => this.prisma.planItem.update({ where: { id: entry.itemId }, data: { actualAmount: money(entry.actualAmount), isDone: true } })),
       );
     }
-    const items = await this.prisma.planItem.findMany({ where: { planId } });
+    const items = await this.prisma.planItem.findMany({ where: { planId }, orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] });
     // Entram na despesa os itens feitos que ainda não têm movimento.
     const unpaid = items.filter((i) => i.isDone && !i.transactionId && i.kind !== 'REVENUE' && i.kind !== 'RESERVE');
     const total = dto.total ?? round2(unpaid.reduce((acc, i) => acc + num(i.actualAmount ?? i.estimatedAmount), 0));

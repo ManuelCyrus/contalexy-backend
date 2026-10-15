@@ -666,6 +666,12 @@ export const ERRORS: Dict = {
   PROMO_CODE_ALREADY_USED: { pt: 'Já usaste este código.', en: 'You’ve already used this code.', fr: 'Tu as déjà utilisé ce code.', de: 'Du hast diesen Code bereits eingelöst.' },
   PROMO_CODE_TAKEN: { pt: 'Já existe um código com esse nome.', en: 'A code with that name already exists.', fr: 'Un code portant ce nom existe déjà.', de: 'Ein Code mit diesem Namen existiert bereits.' },
   PROMO_CODE_NOT_FOUND: { pt: 'Código não encontrado.', en: 'Code not found.', fr: 'Code introuvable.', de: 'Code nicht gefunden.' },
+  ADMIN_PROTECTED: {
+    pt: 'O primeiro administrador não pode ser alterado por outro admin.',
+    en: 'The first administrator cannot be changed by another admin.',
+    fr: 'Le premier administrateur ne peut pas être modifié par un autre admin.',
+    de: 'Der erste Administrator kann nicht von einem anderen Admin geändert werden.',
+  },
   ADMIN_AREA_REQUIRED: {
     pt: 'Não tens acesso a esta área da administração.',
     en: 'You do not have access to this admin area.',

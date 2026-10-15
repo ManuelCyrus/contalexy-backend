@@ -129,6 +129,22 @@ const priceSchema = z.object({
 /// Usa o Claude (Anthropic). Existem em todos os planos, com um limite
 /// mensal por pessoa e por tipo — e um teto global de custo (AiBudgetService).
 /// As contas simples (simulador, desperdícios, plano mensal) NÃO passam por aqui.
+/// Tira o Markdown que o modelo às vezes mete mesmo quando se lhe pede texto
+/// simples (a app e o site mostram o texto tal como vem): **negrito**, _itálico_,
+/// `código`, títulos com # e listas com * passam a texto normal.
+export function plainText(text: string): string {
+  return text
+    .replace(/\*\*([^*\n]+)\*\*/g, '$1')
+    .replace(/__([^_\n]+)__/g, '$1')
+    .replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,;:!?]|$)/g, '$1$2')
+    .replace(/(^|[\s(])_([^_\n]+)_(?=[\s).,;:!?]|$)/g, '$1$2')
+    .replace(/`([^`\n]*)`/g, '$1')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/^\s*[*•]\s+/gm, '- ')
+    .replace(/^\s*>\s?/gm, '')
+    .trim();
+}
+
 @Injectable()
 export class AiService {
   constructor(
@@ -316,6 +332,10 @@ export class AiService {
       'You give general budgeting and saving guidance only. Do not recommend buying or selling specific securities, crypto or financial products, and do not give tax or legal advice (suggest a professional for that).',
       // O que se lê na app tem de soar a uma pessoa: sem travessões, sem emojis, sem floreados.
       'Writing style: plain everyday sentences, the way a careful person writes. Never use em dashes or en dashes (use commas, colons or full stops instead), no emoji, no exclamation marks in a row and no filler openings or sign-offs.',
+      // A app e o site mostram o texto tal como vem: nada de Markdown.
+      'Plain text only, never Markdown: no asterisks or underscores for emphasis, no # headings, no backticks, no tables. For a list, start each line with "- " (hyphen and space). Do not bold the numbers; just write them.',
+      // Em português a app trata por "tu" (português europeu), não por "você".
+      'In Portuguese, use European Portuguese and address the user as "tu" (second person singular: "os teus gastos", "podes"), never "você", "o senhor" or "seus".',
       'Stay on personal finance and on how to use the app; politely decline unrelated requests.',
       extra,
     ].join('\n');
@@ -331,7 +351,7 @@ export class AiService {
     const model = await this.model(userId);
     const result = await this.client.complete({ model, system, messages: messages as AiMessage[], maxTokens: 700 });
     await meter.record(model, result.inputTokens, result.outputTokens);
-    return meter.finish({ reply: result.text, usage: await this.usage(userId) });
+    return meter.finish({ reply: plainText(result.text), usage: await this.usage(userId) });
     });
   }
 
@@ -378,8 +398,8 @@ export class AiService {
     await meter.record(model, result.inputTokens, result.outputTokens);
     const parsed = forecastOutputSchema.safeParse(extractJson(result.text));
     const usage = await this.usage(userId);
-    if (!parsed.success || (!parsed.data.summary && !parsed.data.sections.length)) return meter.finish({ headline: '', summary: result.text, sections: [], actions: [], usage });
-    return meter.finish({ ...parsed.data, usage });
+    if (!parsed.success || (!parsed.data.summary && !parsed.data.sections.length)) return meter.finish({ headline: '', summary: plainText(result.text), sections: [], actions: [], usage });
+    return meter.finish({ ...parsed.data, headline: plainText(parsed.data.headline), summary: plainText(parsed.data.summary), sections: parsed.data.sections.map((x) => ({ ...x, title: plainText(x.title), detail: plainText(x.detail) })), actions: parsed.data.actions.map(plainText), usage });
     });
   }
 
@@ -406,8 +426,8 @@ export class AiService {
         insights: z.array(z.object({ title: z.string(), detail: z.string(), tone: z.enum(['positive', 'warning', 'neutral']).catch('neutral') })).catch([]),
       })
       .safeParse(extractJson(result.text));
-    if (!parsed.success || !parsed.data.insights.length) return meter.finish({ summary: result.text, insights: [], usage: await this.usage(userId) });
-    return meter.finish({ ...parsed.data, usage: await this.usage(userId) });
+    if (!parsed.success || !parsed.data.insights.length) return meter.finish({ summary: plainText(result.text), insights: [], usage: await this.usage(userId) });
+    return meter.finish({ summary: plainText(parsed.data.summary), insights: parsed.data.insights.map((x) => ({ ...x, title: plainText(x.title), detail: plainText(x.detail) })), usage: await this.usage(userId) });
     });
   }
 

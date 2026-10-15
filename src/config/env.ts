@@ -41,6 +41,8 @@ const envSchema = z.object({
   /// O número do negócio como as pessoas o veem (ex.: +351910000000)
   WHATSAPP_BUSINESS_NUMBER: z.string().default(''),
   WHATSAPP_API_VERSION: z.string().default('v20.0'),
+  /// Máximo de mensagens tratadas por número por dia (as seguintes são ignoradas, com um aviso)
+  WHATSAPP_DAILY_LIMIT: z.coerce.number().int().min(1).default(60),
   /// Créditos de IA à venda (compras únicas na loja): "produto:créditos,produto:créditos"
   AI_CREDIT_PRODUCTS: z.string().default('contalex_ai_credits_50:50,contalex_ai_credits_200:200'),
   UPLOADS_DIR: z.string().default('uploads'),
@@ -62,6 +64,8 @@ const envSchema = z.object({
 
   // IA (Claude, da Anthropic). Sem chave, as funções de IA respondem "indisponível".
   ANTHROPIC_API_KEY: z.string().optional(),
+  /// Só para chaves que não pertencem a um workspace (a API pede o cabeçalho anthropic-workspace-id)
+  ANTHROPIC_WORKSPACE_ID: z.string().optional(),
   AI_MODEL: z.string().default('claude-haiku-4-5-20251001'),
   AI_MODEL_ADVANCED: z.string().default('claude-sonnet-5'),
   /// Teto global de custo da IA por mês, em USD (0 = sem teto). A 80% as
@@ -81,9 +85,11 @@ const envSchema = z.object({
   REVENUECAT_SECRET_API_KEY: z.string().optional(),
   /// Só para testes: deixa dar Premium a si próprio pela API.
   BILLING_DEV_GRANTS: z.string().default('false'),
-  /// As compras de teste das lojas (sandbox) dão acesso? Tem de ficar a true
-  /// para a revisão da Apple e para os testadores da Google Play.
-  BILLING_ACCEPT_SANDBOX: z.string().default('true'),
+  /// As compras de teste das lojas (sandbox) dão acesso? Só os testadores de
+  /// licença da Google e as contas sandbox/revisores da Apple as conseguem fazer.
+  /// Vazio = true em desenvolvimento, false em produção (é preciso ligar à mão
+  /// enquanto a Apple revê a app).
+  BILLING_ACCEPT_SANDBOX: z.string().default(''),
 
   // Promoções do Premium
   PROMOTIONS_ENABLED: z.string().default('true'),
@@ -114,6 +120,8 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     const issues = parsed.error.issues.map((i) => `  - ${i.path.join('.')}: ${i.message}`).join('\n');
     throw new Error(`Configuração inválida (.env):\n${issues}`);
   }
+  // Sem valor explícito, as compras de teste só dão acesso fora de produção.
+  if (!parsed.data.BILLING_ACCEPT_SANDBOX) parsed.data.BILLING_ACCEPT_SANDBOX = parsed.data.NODE_ENV === 'production' ? 'false' : 'true';
   return parsed.data;
 }
 

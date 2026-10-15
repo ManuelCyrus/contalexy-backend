@@ -37,6 +37,7 @@ export class AnthropicClient {
         headers: {
           'x-api-key': key,
           'anthropic-version': '2023-06-01',
+          ...(env().ANTHROPIC_WORKSPACE_ID ? { 'anthropic-workspace-id': env().ANTHROPIC_WORKSPACE_ID as string } : {}),
           'content-type': 'application/json',
         },
         body: JSON.stringify({

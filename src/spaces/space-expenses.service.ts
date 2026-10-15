@@ -87,7 +87,8 @@ export class SpaceExpensesService {
   }
 
   private async memberIds(spaceId: string) {
-    return (await this.prisma.spaceMember.findMany({ where: { spaceId }, select: { userId: true } })).map((m) => m.userId);
+    // Por ordem de entrada: os cêntimos que sobram de uma divisão vão sempre para os mesmos.
+    return (await this.prisma.spaceMember.findMany({ where: { spaceId }, select: { userId: true }, orderBy: [{ joinedAt: 'asc' }, { userId: 'asc' }] })).map((m) => m.userId);
   }
 
   /// O que há no fundo comum para gastar (sem o que está guardado para metas).

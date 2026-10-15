@@ -5,4 +5,3 @@ uploads/
 .env
 src/generated/
 *.log
-notificacoes_push.json
