@@ -1,0 +1,1684 @@
+// Contalexy — modelo de dados.
+// Valores em dinheiro: Decimal(18,2). Datas de movimentos: só o dia
+// (@db.Date) — um movimento acontece num dia, sem confusões de fuso.
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "cjs"
+  importFileExtension = ""
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================ Enums ============================
+
+enum AccountType {
+  BANK
+  CASH
+  SAVINGS
+  CREDIT_CARD
+  DIGITAL_WALLET
+  INVESTMENT
+  OTHER
+}
+
+enum CategoryType {
+  INCOME
+  EXPENSE
+}
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+  TRANSFER
+}
+
+enum Frequency {
+  DAILY
+  WEEKLY
+  MONTHLY
+  YEARLY
+}
+
+enum BudgetPeriod {
+  WEEKLY
+  MONTHLY
+  YEARLY
+}
+
+enum GoalStatus {
+  ACTIVE
+  COMPLETED
+  ARCHIVED
+}
+
+enum PlanType {
+  TRIP
+  EVENT
+  PROJECT
+  PURCHASE
+  SHOPPING
+  /// Plano de negócio (capital, custos, receita e lucro estimados)
+  BUSINESS
+  /// Mudança de casa
+  MOVING
+  COURSE
+  VEHICLE
+  OTHER
+}
+
+enum PlanStatus {
+  PLANNING
+  ACTIVE
+  DONE
+  CANCELLED
+}
+
+enum SpaceType {
+  HOUSEHOLD
+  COUPLE
+  TRIP
+  FRIENDS
+  PROJECT
+  OTHER
+}
+
+enum SpaceRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  CANCELLED
+  EXPIRED
+}
+
+enum SplitMethod {
+  EQUAL
+  EXACT
+  PERCENT
+  SHARES
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  TRIAL
+  CANCELLED
+  EXPIRED
+  BILLING_ISSUE
+}
+
+enum BillingPlatform {
+  WEB
+  IOS
+  ANDROID
+  OTHER
+}
+
+enum AttachmentKind {
+  RECEIPT
+  AVATAR
+  SPACE_RECEIPT
+  PRICE_TAG
+  OTHER
+}
+
+enum AiKind {
+  /// Pergunta rápida ao assistente
+  CHAT
+  /// Análises e previsões "completas" (contam para o mesmo limite)
+  INSIGHTS
+  PLAN
+  FORECAST
+  /// Documentos lidos (recibos, etiquetas)
+  RECEIPT_SCAN
+  PRICE_SCAN
+}
+
+enum LoanDirection {
+  /// Emprestei — devem-me
+  LENT
+  /// Pedi emprestado — devo
+  BORROWED
+}
+
+enum LoanStatus {
+  OPEN
+  SETTLED
+  /// Perdoado/cancelado (deixa de contar e de lembrar)
+  CANCELLED
+}
+
+enum ShareStatus {
+  PENDING
+  ACTIVE
+  DECLINED
+  REVOKED
+}
+
+enum ShareScope {
+  /// Só totais e categorias
+  SUMMARY
+  /// Também a lista de movimentos
+  FULL
+}
+
+enum RuleField {
+  DESCRIPTION
+  MERCHANT
+}
+
+enum RuleOperator {
+  CONTAINS
+  EQUALS
+  STARTS_WITH
+}
+
+// ============================ Utilizador ============================
+
+model User {
+  id                String    @id @default(uuid())
+  email             String    @unique
+  username          String    @unique
+  /// null = conta que entra só com o Google (ainda sem palavra-passe)
+  passwordHash      String?
+  /// Identificador da conta Google ("sub") quando a pessoa entra com o Google
+  googleId          String?   @unique
+  /// Quando ficou provado que o email é da pessoa (Google ou código por email)
+  emailVerifiedAt   DateTime?
+  name              String
+  avatarUrl         String?
+  /// "Sobre mim", no perfil que os outros veem (até 160 caracteres)
+  bio               String?   @db.VarChar(160)
+  phone             String?
+  /// ISO 3166-1 alfa-2 (ex.: "PT")
+  country           String    @db.VarChar(2)
+  /// "pt" | "en" | "fr" | "de" (novos idiomas entram sem mudar o esquema)
+  language          String    @db.VarChar(8)
+  /// "auto" = segue o telemóvel; "manual" = escolhido pela pessoa (fica)
+  languageSource    String    @default("auto")
+  /// ISO 4217 (ex.: "EUR") — moeda principal
+  currency          String    @db.VarChar(3)
+  timezone          String    @default("UTC")
+  /// Dia em que começa o "mês financeiro" (ex.: dia do salário)
+  monthStartDay     Int       @default(1)
+  /// 1 = segunda-feira, 7 = domingo
+  weekStartsOn      Int       @default(1)
+  notificationPrefs Json      @default("{}")
+  /// Limite de gastos por dia, o de todos os dias (null = sem limite)
+  dailyLimit        Decimal?  @db.Decimal(18, 2)
+  role              String    @default("USER")
+  /// Áreas da administração a que este admin acede (vazio = todas)
+  adminAreas        String[]  @default([])
+  /// Data de nascimento (só a data)
+  birthDate         DateTime? @db.Date
+  onboardedAt       DateTime?
+  lastActiveAt      DateTime?
+  lastPromotionAt   DateTime?
+  /// Pedido para apagar a conta: fica marcada e só é apagada no dia
+  /// `deletionScheduledFor` (30 dias depois). Entrar de novo cancela o pedido.
+  deletionRequestedAt  DateTime?
+  deletionScheduledFor DateTime?
+  /// De onde veio o registo: android | ios | web (pelo navegador do primeiro pedido)
+  signupPlatform    String?   @db.VarChar(16)
+  /// Campanha ou origem indicada pela app ao registar (ex.: "instagram_pt")
+  signupCampaign    String?   @db.VarChar(60)
+  /// Créditos de IA comprados ou oferecidos: usam-se quando a quota do período acaba
+  aiCredits         Int       @default(0)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  refreshTokens       RefreshToken[]
+  loginEvents         LoginEvent[]
+  passwordResets      PasswordReset[]
+  pushTokens          PushToken[]
+  accounts            Account[]
+  categories          Category[]
+  transactions        Transaction[]
+  attachments         Attachment[]
+  recurringRules      RecurringRule[]
+  budgets             Budget[]
+  goals               Goal[]
+  plans               Plan[]
+  spaceMemberships    SpaceMember[]
+  invitationsSent     SpaceInvitation[]    @relation("InvitationsSent")
+  invitationsReceived SpaceInvitation[]    @relation("InvitationsReceived")
+  expensesPaid        SpaceExpense[]       @relation("ExpensesPaid")
+  expensesCreated     SpaceExpense[]       @relation("ExpensesCreated")
+  expenseShares       SpaceExpenseShare[]
+  settlementsPaid     SpaceSettlement[]    @relation("SettlementsFrom")
+  settlementsReceived SpaceSettlement[]    @relation("SettlementsTo")
+  notifications       Notification[]
+  subscriptions       Subscription[]
+  promotionStates     UserPromotionState[]
+  aiUsage             AiUsage[]
+  priceRecords        PriceRecord[]
+  rules               CategoryRule[]
+  savedFilters        SavedFilter[]
+  loans               Loan[]               @relation("LoanOwner")
+  loansWithMe         Loan[]               @relation("LoanCounterpart")
+  planOffersSent      MonthlyPlanOffer[]   @relation("PlanOffersSent")
+  planOffersReceived  MonthlyPlanOffer[]   @relation("PlanOffersReceived")
+  spaceDeposits       SpaceDeposit[]
+  messages            Message[]
+  chatReads           ChatRead[]
+  monthlyPlans        MonthlyPlan[]
+  sharesGiven         SharedAccess[]       @relation("SharesGiven")
+  sharesReceived      SharedAccess[]       @relation("SharesReceived")
+  promoRedemptions    PromoRedemption[]
+  dailyLimitDays      DailyLimitDay[]
+  itemOffersSent      ItemOffer[]          @relation("ItemOffersSent")
+  itemOffersReceived  ItemOffer[]          @relation("ItemOffersReceived")
+  usageCounters       UsageCounter[]
+  feedback            Feedback[]
+  aiCreditEvents      AiCreditEvent[]
+  investments         Investment[]
+  dividends           Dividend[]
+  whatsappLink        WhatsappLink?
+  pendingTransactions PendingTransaction[]
+  importBatches       ImportBatch[]
+}
+
+/// Um dia concreto do limite diário: o limite "só para esse dia" (se a pessoa o
+/// mudou) e até onde já se avisou nesse dia (para avisar uma vez).
+model DailyLimitDay {
+  userId     String
+  date       DateTime @db.Date
+  /// null = vale o limite de todos os dias
+  amount     Decimal? @db.Decimal(18, 2)
+  /// 0 = ainda não avisou · 80 = avisou que está quase · 100 = avisou que chegou ao limite
+  alertLevel Int      @default(0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, date])
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  userAgent String?
+  /// A sessão a que o token pertence (mantém-se quando o token é trocado por outro)
+  sessionId String?
+  ip        String?
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, sessionId])
+}
+
+/// Histórico de entradas na conta (e tentativas falhadas), para a pessoa ver
+/// onde e quando a conta foi usada.
+model LoginEvent {
+  id        String   @id @default(uuid())
+  userId    String
+  /// password | google | register | reset
+  method    String
+  success   Boolean  @default(true)
+  userAgent String?
+  ip        String?
+  /// A sessão que esta entrada abriu (null nas tentativas falhadas)
+  sessionId String?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+model PasswordReset {
+  id        String    @id @default(uuid())
+  userId    String
+  codeHash  String
+  attempts  Int       @default(0)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model PushToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  platform  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ============================ Dinheiro ============================
+
+model Account {
+  id             String      @id @default(uuid())
+  userId         String
+  name           String
+  type           AccountType
+  /// Banco/serviço (ex.: "Revolut", "PayPal") — só informativo
+  institution    String?
+  /// Banco de referência (só o logótipo; sem ligação bancária)
+  institutionId  String?
+  currency       String      @db.VarChar(3)
+  initialBalance Decimal     @default(0) @db.Decimal(18, 2)
+  creditLimit    Decimal?    @db.Decimal(18, 2)
+  color          String      @default("#2D4BE0")
+  icon           String      @default("wallet")
+  includeInTotal Boolean     @default(true)
+  sortOrder      Int         @default(0)
+  archivedAt     DateTime?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions      Transaction[]   @relation("AccountTransactions")
+  incomingTransfers Transaction[]   @relation("TransferTarget")
+  recurringRules    RecurringRule[] @relation("RecurringAccount")
+  recurringTargets  RecurringRule[] @relation("RecurringTarget")
+
+  @@index([userId])
+}
+
+model Category {
+  id         String       @id @default(uuid())
+  userId     String
+  /// Categorias de base: "food", "transport"… (a app traduz). Null = criada pela pessoa.
+  key        String?
+  /// Nome dado pela pessoa (personalizadas ou de base renomeadas)
+  name       String?
+  type       CategoryType
+  icon       String       @default("tag")
+  color      String       @default("#64748B")
+  parentId   String?
+  sortOrder  Int          @default(0)
+  archivedAt DateTime?
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent       Category?       @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children     Category[]      @relation("CategoryTree")
+  transactions Transaction[]
+  recurring    RecurringRule[]
+  rules        CategoryRule[]
+  plans        Plan[]
+
+  @@unique([userId, key])
+  @@index([userId, type])
+}
+
+model Transaction {
+  id                 String          @id @default(uuid())
+  userId             String
+  type               TransactionType
+  /// Sempre positivo — o tipo diz se entra ou sai
+  amount             Decimal         @db.Decimal(18, 2)
+  /// Moeda da conta de origem
+  currency           String          @db.VarChar(3)
+  accountId          String
+  /// Transferências: conta de destino
+  toAccountId        String?
+  /// Transferências entre moedas: quanto chegou ao destino
+  toAmount           Decimal?        @db.Decimal(18, 2)
+  categoryId         String?
+  date               DateTime        @db.Date
+  description        String?
+  merchant           String?
+  note               String?
+  tags               String[]        @default([])
+  locationName       String?
+  latitude           Float?
+  longitude          Float?
+  /// Ajustes de saldo e afins não contam como receita/despesa
+  excludeFromReports Boolean         @default(false)
+  isAdjustment       Boolean         @default(false)
+  recurringRuleId    String?
+  planId             String?
+  spaceExpenseId     String?
+  /// Movimento criado por um empréstimo (saída/entrada do dinheiro emprestado)
+  loanId             String?
+  /// Produtos de uma fatura lida: [{ name, quantity, price }] (price = total da linha)
+  items              Json?
+  /// Os nomes desses produtos num só texto (para a pesquisa)
+  itemsText          String?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account       Account        @relation("AccountTransactions", fields: [accountId], references: [id], onDelete: Cascade)
+  toAccount     Account?       @relation("TransferTarget", fields: [toAccountId], references: [id], onDelete: Cascade)
+  category      Category?      @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  recurringRule RecurringRule? @relation(fields: [recurringRuleId], references: [id], onDelete: SetNull)
+  plan          Plan?          @relation(fields: [planId], references: [id], onDelete: SetNull)
+  spaceExpense  SpaceExpense?  @relation(fields: [spaceExpenseId], references: [id], onDelete: SetNull)
+  loan          Loan?          @relation(fields: [loanId], references: [id], onDelete: SetNull)
+  planItems     PlanItem[]
+  attachments   Attachment[]
+
+  @@index([userId, date])
+  @@index([userId, type, date])
+  @@index([accountId])
+  @@index([toAccountId])
+  @@index([categoryId])
+  @@index([planId])
+  @@index([loanId])
+}
+
+model Attachment {
+  id             String         @id @default(uuid())
+  userId         String
+  kind           AttachmentKind
+  storageKey     String         @unique
+  mimeType       String
+  size           Int
+  transactionId  String?
+  spaceExpenseId String?
+  createdAt      DateTime       @default(now())
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transaction  Transaction?  @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+  spaceExpense SpaceExpense? @relation(fields: [spaceExpenseId], references: [id], onDelete: SetNull)
+  priceRecord  PriceRecord?
+
+  @@index([userId])
+  @@index([transactionId])
+  @@index([spaceExpenseId])
+}
+
+model RecurringRule {
+  id               String          @id @default(uuid())
+  userId           String
+  type             TransactionType
+  amount           Decimal         @db.Decimal(18, 2)
+  accountId        String
+  toAccountId      String?
+  categoryId       String?
+  description      String
+  merchant         String?
+  frequency        Frequency
+  interval         Int             @default(1)
+  startDate        DateTime        @db.Date
+  endDate          DateTime?       @db.Date
+  /// Próxima ocorrência por tratar
+  nextDate         DateTime        @db.Date
+  /// true = cria o movimento sozinho no dia; false = só lembra
+  autoCreate       Boolean         @default(true)
+  remindDaysBefore Int             @default(1)
+  /// BILL | SUBSCRIPTION | SALARY | RENT | LOAN | INSURANCE | OTHER
+  kind             String          @default("OTHER")
+  isActive         Boolean         @default(true)
+  lastRunAt        DateTime?
+  /// Ocorrência que já foi lembrada (para não lembrar duas vezes)
+  lastReminderFor  DateTime?       @db.Date
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account      Account       @relation("RecurringAccount", fields: [accountId], references: [id], onDelete: Cascade)
+  toAccount    Account?      @relation("RecurringTarget", fields: [toAccountId], references: [id], onDelete: Cascade)
+  category     Category?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  transactions Transaction[]
+
+  @@index([userId])
+  @@index([isActive, nextDate])
+}
+
+model Budget {
+  id              String       @id @default(uuid())
+  userId          String
+  name            String
+  amount          Decimal      @db.Decimal(18, 2)
+  currency        String       @db.VarChar(3)
+  period          BudgetPeriod @default(MONTHLY)
+  /// Vazio = todas as despesas
+  categoryIds     String[]     @default([])
+  /// Avisar a X% (ex.: [80, 100])
+  alertThresholds Int[]        @default([80, 100])
+  /// O que sobra passa para o período seguinte (Premium)
+  rollover        Boolean      @default(false)
+  isActive        Boolean      @default(true)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  user   User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  alerts BudgetAlert[]
+
+  @@index([userId])
+}
+
+model BudgetAlert {
+  id        String   @id @default(uuid())
+  budgetId  String
+  /// "2026-10", "2026-W40", "2026"
+  periodKey String
+  threshold Int
+  sentAt    DateTime @default(now())
+  budget    Budget   @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+
+  @@unique([budgetId, periodKey, threshold])
+}
+
+model Goal {
+  id           String     @id @default(uuid())
+  userId       String
+  name         String
+  targetAmount Decimal    @db.Decimal(18, 2)
+  currency     String     @db.VarChar(3)
+  /// Quando a pessoa começa a juntar (null = desde que criou o objetivo)
+  startDate    DateTime?  @db.Date
+  targetDate   DateTime?  @db.Date
+  icon         String     @default("flag")
+  color        String     @default("#12B886")
+  accountId    String?
+  status       GoalStatus @default(ACTIVE)
+  completedAt  DateTime?
+  /// Fixado no Início
+  pinnedAt     DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  user          User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contributions GoalContribution[]
+  deposits      GoalDeposit[]
+  steps         GoalStep[]
+
+  @@index([userId])
+}
+
+/// Objetivo específico dentro de um objetivo: uma parte do caminho, com ou sem
+/// valor e data ("Voo: 800", "Tirar o passaporte").
+model GoalStep {
+  id        String    @id @default(uuid())
+  goalId    String
+  title     String
+  amount    Decimal?  @db.Decimal(18, 2)
+  dueDate   DateTime? @db.Date
+  doneAt    DateTime?
+  sortOrder Int       @default(0)
+  createdAt DateTime  @default(now())
+
+  goal Goal @relation(fields: [goalId], references: [id], onDelete: Cascade)
+
+  @@index([goalId])
+}
+
+model GoalContribution {
+  id        String   @id @default(uuid())
+  goalId    String
+  userId    String
+  /// Negativo = retirada
+  amount    Decimal  @db.Decimal(18, 2)
+  date      DateTime @db.Date
+  note      String?
+  /// Depósito planeado que deu origem a esta entrada
+  depositId String?
+  createdAt DateTime @default(now())
+  goal      Goal     @relation(fields: [goalId], references: [id], onDelete: Cascade)
+
+  @@index([goalId])
+}
+
+/// Depósito planeado num objetivo: "no dia 28 vou pôr 100" (uma vez) ou
+/// "todos os dias 28 passo a pôr 100" (todas as semanas / todos os meses).
+model GoalDeposit {
+  id              String    @id @default(uuid())
+  goalId          String
+  userId          String
+  amount          Decimal   @db.Decimal(18, 2)
+  /// ONCE | WEEKLY | MONTHLY
+  frequency       String    @default("ONCE")
+  /// Primeira data (as seguintes contam-se a partir daqui)
+  startDate       DateTime  @db.Date
+  /// Próxima data por tratar
+  nextDate        DateTime  @db.Date
+  endDate         DateTime? @db.Date
+  /// true = no dia, entra sozinho no objetivo; false = só lembra
+  autoApply       Boolean   @default(false)
+  note            String?
+  isActive        Boolean   @default(true)
+  /// Ocorrência que já foi lembrada (para não lembrar duas vezes)
+  lastReminderFor DateTime? @db.Date
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  goal Goal @relation(fields: [goalId], references: [id], onDelete: Cascade)
+
+  @@index([goalId])
+  @@index([userId])
+  @@index([isActive, nextDate])
+}
+
+model Plan {
+  id          String     @id @default(uuid())
+  userId      String
+  name        String
+  type        PlanType   @default(OTHER)
+  status      PlanStatus @default(PLANNING)
+  description String?
+  icon        String     @default("map")
+  color       String     @default("#2D4BE0")
+  budget      Decimal?   @db.Decimal(18, 2)
+  currency    String     @db.VarChar(3)
+  startDate   DateTime?  @db.Date
+  endDate     DateTime?  @db.Date
+  aiGenerated Boolean    @default(false)
+  /// Planos de negócio: capital disponível para arrancar
+  capital     Decimal?   @db.Decimal(18, 2)
+  /// Fixado no Início
+  pinnedAt    DateTime?
+  /// Mês a que o plano pertence ("2026-11"); null = sem mês
+  periodKey   String?
+  /// Categoria que este plano detalha (ex.: lista de compras → Alimentação)
+  categoryId  String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category     Category?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  items        PlanItem[]
+  transactions Transaction[]
+
+  @@index([userId])
+  @@index([userId, periodKey])
+}
+
+model PlanItem {
+  id              String    @id @default(uuid())
+  planId          String
+  title           String
+  notes           String?
+  quantity        Int       @default(1)
+  /// Preço de uma unidade (quando existe, a estimativa = quantidade × este preço)
+  unitPrice       Decimal?  @db.Decimal(18, 2)
+  /// Estimativa para a linha toda (quantidade incluída)
+  estimatedAmount Decimal?  @db.Decimal(18, 2)
+  /// Quanto custou de facto (listas de compras: planeado vs. real)
+  actualAmount    Decimal?  @db.Decimal(18, 2)
+  /// COST (custo único) | MONTHLY_COST | REVENUE (receita mensal prevista) | RESERVE
+  kind            String    @default("COST")
+  isDone          Boolean   @default(false)
+  dueDate         DateTime? @db.Date
+  categoryKey     String?
+  /// Movimento criado ao "pagar" o item
+  transactionId   String?
+  sortOrder       Int       @default(0)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  plan        Plan         @relation(fields: [planId], references: [id], onDelete: Cascade)
+  transaction Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+
+  @@index([planId])
+  @@index([transactionId])
+}
+
+model CategoryRule {
+  id         String       @id @default(uuid())
+  userId     String
+  field      RuleField    @default(DESCRIPTION)
+  operator   RuleOperator @default(CONTAINS)
+  value      String
+  categoryId String
+  addTags    String[]     @default([])
+  isActive   Boolean      @default(true)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model SavedFilter {
+  id        String   @id @default(uuid())
+  userId    String
+  name      String
+  filters   Json
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model ExchangeRate {
+  base  String   @db.VarChar(3)
+  quote String   @db.VarChar(3)
+  rate  Decimal  @db.Decimal(24, 10)
+  date  DateTime @db.Date
+
+  @@id([base, quote, date])
+}
+
+// ============================ Spaces (grupos) ============================
+
+model Space {
+  id          String    @id @default(uuid())
+  name        String
+  type        SpaceType @default(OTHER)
+  description String?
+  icon        String    @default("users")
+  color       String    @default("#2D4BE0")
+  currency    String    @db.VarChar(3)
+  inviteCode  String    @unique
+  createdById String
+  /// Privilégios. Quem pode convidar: ALL (qualquer membro) | ADMINS
+  inviteBy    String    @default("ALL")
+  /// Quem pode registar despesas: ALL | ADMINS
+  expensesBy  String    @default("ALL")
+  /// Quem pode mudar/apagar despesas: OWN (quem registou ou pagou, e os admins) | ADMINS
+  editBy      String    @default("OWN")
+  /// Privilégios por papel: { ADMIN: { invite, addExpense, … }, MEMBER: { … } }
+  privileges  Json      @default("{}")
+  archivedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  members     SpaceMember[]
+  invitations SpaceInvitation[]
+  expenses    SpaceExpense[]
+  settlements SpaceSettlement[]
+  activity    SpaceActivity[]
+  deposits    SpaceDeposit[]
+  goals       SpaceGoal[]
+  planLines   SpacePlanLine[]
+  messages    Message[]
+}
+
+/// Registo do que se mudou ou apagou num Space ("quem apagou o quê").
+model SpaceActivity {
+  id        String   @id @default(uuid())
+  spaceId   String
+  /// Quem fez (o nome fica guardado para o caso de a conta ser apagada)
+  actorId   String?
+  actorName String
+  /// expense_deleted | expense_updated | settlement_deleted | member_removed |
+  /// member_left | role_changed | space_updated | privileges_changed
+  type      String
+  data      Json     @default("{}")
+  createdAt DateTime @default(now())
+  space     Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  @@index([spaceId, createdAt])
+}
+
+model SpaceMember {
+  id       String    @id @default(uuid())
+  spaceId  String
+  userId   String
+  role     SpaceRole @default(MEMBER)
+  joinedAt DateTime  @default(now())
+
+  space Space @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([spaceId, userId])
+  @@index([userId])
+}
+
+model SpaceInvitation {
+  id          String           @id @default(uuid())
+  spaceId     String
+  inviterId   String
+  inviteeId   String?
+  email       String?
+  status      InvitationStatus @default(PENDING)
+  expiresAt   DateTime
+  respondedAt DateTime?
+  createdAt   DateTime         @default(now())
+
+  space   Space @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  inviter User  @relation("InvitationsSent", fields: [inviterId], references: [id], onDelete: Cascade)
+  invitee User? @relation("InvitationsReceived", fields: [inviteeId], references: [id], onDelete: Cascade)
+
+  @@index([inviteeId, status])
+  @@index([email, status])
+  @@index([spaceId])
+}
+
+model SpaceExpense {
+  id          String      @id @default(uuid())
+  spaceId     String
+  /// Quem registou. Null = conta apagada (o histórico fica para os outros)
+  createdById String?
+  /// Quem pagou. Null = conta apagada
+  paidById    String?
+  title       String
+  amount      Decimal     @db.Decimal(18, 2)
+  currency    String      @db.VarChar(3)
+  date        DateTime    @db.Date
+  categoryKey String?
+  splitMethod SplitMethod @default(EQUAL)
+  note        String?
+  /// Paga com o fundo comum do Space (ninguém "pagou": sai do que foi depositado)
+  fromPot     Boolean     @default(false)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  space        Space               @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  createdBy    User?               @relation("ExpensesCreated", fields: [createdById], references: [id], onDelete: SetNull)
+  paidBy       User?               @relation("ExpensesPaid", fields: [paidById], references: [id], onDelete: SetNull)
+  shares       SpaceExpenseShare[]
+  attachments  Attachment[]
+  transactions Transaction[]
+
+  @@index([spaceId, date])
+}
+
+model SpaceExpenseShare {
+  id        String   @id @default(uuid())
+  expenseId String
+  userId    String?
+  /// Quanto esta pessoa deve desta despesa
+  amount    Decimal  @db.Decimal(18, 2)
+  /// % ou partes, como foi escolhido (EXACT/EQUAL: null)
+  weight    Decimal? @db.Decimal(9, 4)
+
+  expense SpaceExpense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  user    User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@unique([expenseId, userId])
+  @@index([userId])
+}
+
+model SpaceSettlement {
+  id          String   @id @default(uuid())
+  spaceId     String
+  fromUserId  String?
+  toUserId    String?
+  amount      Decimal  @db.Decimal(18, 2)
+  currency    String   @db.VarChar(3)
+  date        DateTime @db.Date
+  note        String?
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  space    Space @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  fromUser User? @relation("SettlementsFrom", fields: [fromUserId], references: [id], onDelete: SetNull)
+  toUser   User? @relation("SettlementsTo", fields: [toUserId], references: [id], onDelete: SetNull)
+
+  @@index([spaceId])
+}
+
+// ============================ Plano em grupo ============================
+
+/// Dinheiro que um membro pôs no fundo comum do Space — ou tirou de lá.
+model SpaceDeposit {
+  id            String   @id @default(uuid())
+  spaceId       String
+  /// Quem depositou (null = conta apagada; o dinheiro fica no fundo)
+  userId        String?
+  /// Positivo = depósito; negativo = levantamento
+  amount        Decimal  @db.Decimal(18, 2)
+  currency      String   @db.VarChar(3)
+  /// A meta do grupo para onde foi este dinheiro (opcional)
+  goalId        String?
+  date          DateTime @db.Date
+  note          String?
+  /// Movimento criado na conta pessoal de quem depositou (se o quis registar)
+  transactionId String?
+  createdAt     DateTime @default(now())
+
+  space Space      @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  user  User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+  goal  SpaceGoal? @relation(fields: [goalId], references: [id], onDelete: SetNull)
+
+  @@index([spaceId, date])
+  @@index([userId])
+}
+
+/// Uma meta do grupo ("Viagem a Paris: 1 000 €") para onde todos depositam.
+model SpaceGoal {
+  id           String    @id @default(uuid())
+  spaceId      String
+  name         String
+  icon         String    @default("flag")
+  color        String    @default("#12B886")
+  targetAmount Decimal   @db.Decimal(18, 2)
+  targetDate   DateTime? @db.Date
+  /// ACTIVE | COMPLETED | ARCHIVED
+  status       String    @default("ACTIVE")
+  createdById  String?
+  completedAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  space    Space          @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  deposits SpaceDeposit[]
+
+  @@index([spaceId])
+}
+
+/// O plano do grupo: quanto se quer gastar em quê. O "gasto" de cada linha
+/// vem das despesas do Space com a mesma categoria.
+model SpacePlanLine {
+  id          String  @id @default(uuid())
+  spaceId     String
+  /// Categoria de base (food, transport…)
+  categoryKey String?
+  /// Nome de uma linha livre (ex.: "Bilhetes")
+  title       String?
+  amount      Decimal @db.Decimal(18, 2)
+  sortOrder   Int     @default(0)
+
+  space Space @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  @@index([spaceId])
+}
+
+// ============================ Mensagens ============================
+
+/// Mensagem rápida: na conversa de um Space (grupo) ou entre duas pessoas.
+model Message {
+  id        String    @id @default(uuid())
+  /// Conversa de um Space…
+  spaceId   String?
+  /// …ou entre duas pessoas: os dois ids por ordem alfabética, "a:b"
+  directKey String?
+  /// Quem escreveu (null = conta apagada)
+  senderId  String?
+  text      String
+  createdAt DateTime  @default(now())
+  /// Apagada por quem a escreveu (fica o lugar, sem o texto)
+  deletedAt DateTime?
+
+  space  Space? @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  sender User?  @relation(fields: [senderId], references: [id], onDelete: SetNull)
+
+  @@index([spaceId, createdAt])
+  @@index([directKey, createdAt])
+}
+
+/// Até onde cada pessoa leu cada conversa ("space:<id>" ou "direct:<a:b>").
+model ChatRead {
+  id     String   @id @default(uuid())
+  userId String
+  thread String
+  readAt DateTime @default(now())
+  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, thread])
+}
+
+// ============================ Notificações ============================
+
+model Notification {
+  id        String    @id @default(uuid())
+  userId    String
+  /// budget_alert | payment_reminder | space_invite | space_expense | …
+  type      String
+  data      Json      @default("{}")
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+// ============================ Premium ============================
+
+/// Catálogo dos planos (Free, Premium, Premium+). Fica na base de dados
+/// para se mudarem limites e benefícios sem mexer no código.
+model SubscriptionPlan {
+  code          String   @id
+  rank          Int
+  isActive      Boolean  @default(true)
+  features      String[] @default([])
+  limits        Json     @default("{}")
+  /// Entitlement do RevenueCat que dá este plano (ex.: "premium")
+  entitlementId String?
+  /// Produtos de subscrição (renovam sozinhos)
+  productIds    String[] @default([])
+  /// Compras de uma só vez, sem renovação: { "produto": dias de plano } (null = para sempre)
+  oneTimeProducts Json   @default("{}")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Subscription {
+  id                     String             @id @default(uuid())
+  userId                 String
+  /// Código do plano (FREE | PREMIUM | PREMIUM_PLUS | …)
+  plan                   String
+  status                 SubscriptionStatus
+  platform               BillingPlatform
+  /// REVENUECAT | MANUAL | …
+  provider               String
+  providerSubscriptionId String
+  productId              String?
+  /// SUBSCRIPTION (renova sozinha) | ONE_TIME (paga-se uma vez; acaba na data de fim)
+  kind                   String             @default("SUBSCRIPTION")
+  startDate              DateTime
+  expirationDate         DateTime?
+  autoRenew              Boolean            @default(true)
+  /// A loja devolveu o dinheiro: o plano acaba logo
+  refundedAt             DateTime?
+  /// O momento do último evento da loja já aplicado (os eventos podem chegar fora de ordem)
+  lastEventAt            DateTime?
+  /// A última vez que o estado foi confirmado junto da loja (de servidor para servidor)
+  verifiedAt             DateTime?
+  /// Já se avisou a pessoa de que este plano vai acabar / acabou (um aviso por plano)
+  endingNotifiedAt       DateTime?
+  endNotifiedAt          DateTime?
+  isSandbox              Boolean            @default(false)
+  /// true quando já houve um pagamento real (entra nas contas da receita).
+  /// Códigos promocionais e ofertas ficam sempre a false.
+  isPaid                 Boolean            @default(false)
+  /// Ofertas: quem atribuiu e porquê
+  grantedById            String?
+  note                   String?
+  promoCodeId            String?
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+  user                   User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerSubscriptionId])
+  @@index([userId])
+}
+
+/// Eventos de pagamento já tratados (os webhooks podem repetir-se).
+model BillingEvent {
+  id        String   @id @default(uuid())
+  provider  String
+  eventId   String   @unique
+  type      String
+  userId    String?
+  payload   Json
+  createdAt DateTime @default(now())
+}
+
+model Promotion {
+  key                      String    @id
+  /// DASHBOARD | REPORTS | TRANSACTIONS | GOALS | PLANS | SPACES | RECURRING | SETTINGS
+  placement                String
+  /// Funcionalidade Premium anunciada (null = Premium em geral)
+  feature                  String?
+  variants                 String[]  @default(["A"])
+  isEnabled                Boolean   @default(true)
+  priority                 Int       @default(0)
+  /// Não volta a aparecer antes de X horas
+  minIntervalHours         Int       @default(72)
+  /// Depois de a pessoa fechar, fica X dias sem aparecer
+  cooldownAfterDismissDays Int       @default(14)
+  /// Máximo de vezes que a mesma pessoa a vê
+  maxImpressions           Int       @default(8)
+  targetPlans              String[]  @default(["FREE"])
+  startsAt                 DateTime?
+  endsAt                   DateTime?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+
+  states UserPromotionState[]
+}
+
+model UserPromotionState {
+  userId       String
+  promotionKey String
+  variant      String
+  impressions  Int       @default(0)
+  lastShownAt  DateTime?
+  dismissedAt  DateTime?
+  clickedAt    DateTime?
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  promotion Promotion @relation(fields: [promotionKey], references: [key], onDelete: Cascade)
+
+  @@id([userId, promotionKey])
+}
+
+// ============================ Receita e ofertas ============================
+
+/// Cada pagamento (ou reembolso) comunicado pela loja. É daqui que sai o
+/// relatório de receita — códigos promocionais e ofertas nunca entram.
+model RevenueEvent {
+  id             String          @id @default(uuid())
+  userId         String?
+  provider       String
+  /// Id do evento na origem (um evento só conta uma vez)
+  eventId        String          @unique
+  /// INITIAL_PURCHASE | RENEWAL | NON_RENEWING_PURCHASE | REFUND
+  type           String
+  plan           String?
+  productId      String?
+  platform       BillingPlatform @default(OTHER)
+  /// Valor na moeda em que a pessoa pagou (negativo nos reembolsos)
+  amount         Decimal         @db.Decimal(18, 2)
+  currency       String          @db.VarChar(3)
+  /// O mesmo valor em USD (como a loja o comunica)
+  amountUsd      Decimal         @db.Decimal(18, 2)
+  /// Comissão da loja e impostos (0..1), quando a loja os diz
+  commissionRate Decimal?        @db.Decimal(6, 4)
+  taxRate        Decimal?        @db.Decimal(6, 4)
+  isSandbox      Boolean         @default(false)
+  occurredAt     DateTime
+  createdAt      DateTime        @default(now())
+
+  @@index([occurredAt])
+  @@index([userId])
+}
+
+/// Código promocional: quem o usar fica com o plano sem pagar.
+model PromoCode {
+  id             String    @id @default(uuid())
+  code           String    @unique
+  plan           String
+  /// Quantos dias de plano dá (null = para sempre)
+  durationDays   Int?
+  /// Quantas pessoas o podem usar (null = sem limite)
+  maxRedemptions Int?
+  redeemedCount  Int       @default(0)
+  /// Até quando pode ser usado (null = sempre)
+  expiresAt      DateTime?
+  isActive       Boolean   @default(true)
+  note           String?
+  /// Áreas da app que ficam fechadas para quem usa este código (ex.: spaces, loans)
+  blockedAreas   String[]  @default([])
+  /// Funcionalidades que ficam fechadas para quem usa este código (chaves do catálogo)
+  blockedFeatures String[] @default([])
+  createdById    String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  redemptions PromoRedemption[]
+}
+
+model PromoRedemption {
+  id          String   @id @default(uuid())
+  promoCodeId String
+  userId      String
+  redeemedAt  DateTime @default(now())
+  /// O plano que deu, quando ficou ativo e até quando (null = para sempre)
+  plan        String?
+  activatedAt DateTime?
+  expiresAt   DateTime?
+  subscriptionId String?
+
+  promoCode PromoCode @relation(fields: [promoCodeId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([promoCodeId, userId])
+  @@index([userId])
+}
+
+// ============================ Empréstimos ============================
+
+/// Dinheiro emprestado: o que emprestei (devem-me) e o que pedi (devo).
+model Loan {
+  id               String        @id @default(uuid())
+  userId           String
+  direction        LoanDirection
+  /// A outra pessoa ("o fulano")
+  personName       String
+  amount           Decimal       @db.Decimal(18, 2)
+  currency         String        @db.VarChar(3)
+  date             DateTime      @db.Date
+  /// Até quando tem de ser devolvido (null = sem data)
+  dueDate          DateTime?     @db.Date
+  note             String?
+  /// Conta de onde saiu / onde entrou o dinheiro (opcional)
+  accountId        String?
+  /// Avisar X dias antes da data (ex.: [7, 1])
+  remindDaysBefore Int[]         @default([3, 1])
+  remindOnDue      Boolean       @default(true)
+  /// Continuar a lembrar depois de passar a data
+  remindOverdue    Boolean       @default(true)
+  status           LoanStatus    @default(OPEN)
+  settledAt        DateTime?
+  /// Fixado no Início
+  pinnedAt         DateTime?
+  /// A outra pessoa, quando também usa o Contalexy (empréstimo ligado: os
+  /// dois veem o mesmo empréstimo e as devoluções)
+  counterpartId       String?
+  /// PENDING (à espera que aceite) | ACCEPTED | DECLINED | LEFT (deixou de acompanhar)
+  linkStatus          String?
+  linkRespondedAt     DateTime?
+  /// Fixado no Início de quem está do outro lado
+  counterpartPinnedAt DateTime?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  user         User           @relation("LoanOwner", fields: [userId], references: [id], onDelete: Cascade)
+  counterpart  User?          @relation("LoanCounterpart", fields: [counterpartId], references: [id], onDelete: SetNull)
+  payments     LoanPayment[]
+  reminders    LoanReminder[]
+  transactions Transaction[]
+
+  @@index([userId, status])
+  @@index([status, dueDate])
+  @@index([counterpartId, linkStatus])
+}
+
+/// Devolução (total ou parcial) de um empréstimo.
+model LoanPayment {
+  id            String   @id @default(uuid())
+  loanId        String
+  amount        Decimal  @db.Decimal(18, 2)
+  date          DateTime @db.Date
+  note          String?
+  /// Movimento criado na conta (se a pessoa quis)
+  transactionId String?
+  /// Quem registou a devolução (num empréstimo ligado pode ser qualquer um dos dois)
+  createdById   String?
+  createdAt     DateTime @default(now())
+  loan          Loan     @relation(fields: [loanId], references: [id], onDelete: Cascade)
+
+  @@index([loanId])
+}
+
+/// Lembretes já enviados (para não repetir o mesmo aviso).
+model LoanReminder {
+  id     String   @id @default(uuid())
+  loanId String
+  /// "before:3:2026-10-20", "due:2026-10-20", "overdue:7:2026-10-20"
+  key    String
+  sentAt DateTime @default(now())
+  loan   Loan     @relation(fields: [loanId], references: [id], onDelete: Cascade)
+
+  @@unique([loanId, key])
+}
+
+// ============================ Plano mensal ============================
+
+/// Plano de um mês financeiro: rendimento previsto, quanto se quer gastar
+/// em cada categoria e quanto se quer pôr de lado.
+model MonthlyPlan {
+  id             String   @id @default(uuid())
+  userId         String
+  /// "2026-10" — a chave do mês financeiro (ver financialMonth)
+  periodKey      String
+  plannedIncome  Decimal  @db.Decimal(18, 2)
+  /// Poupança planeada para o mês
+  plannedSavings Decimal  @default(0) @db.Decimal(18, 2)
+  note           String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user  User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lines MonthlyPlanLine[]
+
+  @@unique([userId, periodKey])
+}
+
+model MonthlyPlanLine {
+  id         String    @id @default(uuid())
+  planId     String
+  /// Categoria de despesa (null = linha livre, só com nome)
+  categoryId String?
+  /// Objetivo a que se destina este dinheiro (linhas de poupança)
+  goalId     String?
+  name       String?
+  amount     Decimal   @db.Decimal(18, 2)
+  sortOrder  Int       @default(0)
+  /// Esta linha tem "o que vou comprar"? (null = decide-se pela categoria)
+  list       Boolean?
+  /// Já se avisou que esta linha passou o planeado (um aviso por mês)
+  alertedAt  DateTime?
+
+  plan MonthlyPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@index([planId])
+}
+
+// ============================ Acompanhamento ============================
+
+/// "Quero que a minha mãe veja os meus gastos": acesso só de leitura que a
+/// pessoa dá a alguém e pode tirar quando quiser.
+/// Um plano do mês enviado a outra pessoa, para ela usar se quiser — o meu
+/// plano como modelo, ou uma proposta de quem acompanha os gastos de alguém.
+model MonthlyPlanOffer {
+  id             String    @id @default(uuid())
+  fromUserId     String
+  toUserId       String
+  /// O mês a que o plano diz respeito ("2026-10")
+  periodKey      String
+  note           String?
+  /// Rendimento planeado — só vai se quem envia o quiser mostrar
+  plannedIncome  Decimal?  @db.Decimal(18, 2)
+  plannedSavings Decimal   @default(0) @db.Decimal(18, 2)
+  currency       String    @db.VarChar(3)
+  /// [{ kind: "CATEGORY", key, name, icon, color, amount } | { kind: "CUSTOM", name, amount }]
+  lines          Json
+  /// PENDING | ACCEPTED | DECLINED | CANCELLED
+  status         String    @default("PENDING")
+  /// O mês em que quem recebeu passou a usar o plano
+  appliedKey     String?
+  /// Proposta feita por quem acompanha os gastos (SharedAccess)
+  accessId       String?
+  createdAt      DateTime  @default(now())
+  respondedAt    DateTime?
+
+  from User @relation("PlanOffersSent", fields: [fromUserId], references: [id], onDelete: Cascade)
+  to   User @relation("PlanOffersReceived", fields: [toUserId], references: [id], onDelete: Cascade)
+
+  @@index([toUserId, status])
+  @@index([fromUserId, createdAt])
+}
+
+/// Uma coisa minha enviada a outra pessoa como modelo: um objetivo, um plano
+/// (viagem, lista de compras…) ou um limite de gastos. Vai uma cópia do que
+/// interessa (sem o meu dinheiro nem os meus movimentos); quem recebe vê-a e,
+/// se aceitar, fica com ela na sua conta.
+model ItemOffer {
+  id            String    @id @default(uuid())
+  fromUserId    String
+  toUserId      String
+  /// GOAL | PLAN | BUDGET
+  kind          String
+  title         String
+  note          String?
+  currency      String    @db.VarChar(3)
+  /// A cópia que viaja (o formato depende do `kind`)
+  payload       Json
+  /// PENDING | ACCEPTED | DECLINED | CANCELLED
+  status        String    @default("PENDING")
+  /// O que foi criado na conta de quem aceitou
+  createdItemId String?
+  createdAt     DateTime  @default(now())
+  respondedAt   DateTime?
+
+  from User @relation("ItemOffersSent", fields: [fromUserId], references: [id], onDelete: Cascade)
+  to   User @relation("ItemOffersReceived", fields: [toUserId], references: [id], onDelete: Cascade)
+
+  @@index([toUserId, status])
+  @@index([fromUserId, createdAt])
+}
+
+model SharedAccess {
+  id          String      @id @default(uuid())
+  /// Quem mostra os gastos
+  ownerId     String
+  /// Quem vê (null enquanto o convite é só um email)
+  viewerId    String?
+  email       String?
+  status      ShareStatus @default(PENDING)
+  scope       ShareScope  @default(SUMMARY)
+  /// O que quem acompanha pode ver: income | plan | budgets | goals | transactions | plans | recurring
+  sections          String[] @default([])
+  /// "Mostrar tudo exceto": categorias que ficam de fora de tudo o que se mostra
+  hiddenCategoryIds String[] @default([])
+  /// Onde quem acompanha também pode ajudar a gerir (alterar):
+  /// goals | budgets | plan | plans | recurring | transactions
+  manageSections    String[] @default([])
+  createdAt   DateTime    @default(now())
+  respondedAt DateTime?
+
+  owner    User             @relation("SharesGiven", fields: [ownerId], references: [id], onDelete: Cascade)
+  viewer   User?            @relation("SharesReceived", fields: [viewerId], references: [id], onDelete: Cascade)
+  notes    SharedNote[]
+  activity SharedActivity[]
+
+  @@index([ownerId])
+  @@index([viewerId, status])
+  @@index([email, status])
+}
+
+/// Notas trocadas entre quem mostra e quem acompanha ("tenta gastar menos em…").
+/// O que quem ajuda mudou na conta de quem partilha (para quem partilha ver).
+model SharedActivity {
+  id        String       @id @default(uuid())
+  accessId  String
+  /// Quem fez a alteração (quem acompanha)
+  actorId   String
+  /// goals | budgets | plan | plans | recurring | transactions
+  section   String       @db.VarChar(20)
+  /// create | update | delete
+  action    String       @db.VarChar(10)
+  /// O nome do que mudou (objetivo, limite, gasto…), quando o há
+  label     String?      @db.VarChar(160)
+  createdAt DateTime     @default(now())
+  access    SharedAccess @relation(fields: [accessId], references: [id], onDelete: Cascade)
+
+  @@index([accessId, createdAt])
+}
+
+model SharedNote {
+  id        String       @id @default(uuid())
+  accessId  String
+  authorId  String
+  text      String
+  createdAt DateTime     @default(now())
+  access    SharedAccess @relation(fields: [accessId], references: [id], onDelete: Cascade)
+
+  @@index([accessId, createdAt])
+}
+
+// ============================ IA e preços ============================
+
+model AiUsage {
+  id           String   @id @default(uuid())
+  userId       String
+  kind         AiKind
+  inputTokens  Int      @default(0)
+  outputTokens Int      @default(0)
+  /// Custo estimado do pedido em USD (para o teto mensal de IA)
+  costUsd      Decimal  @default(0) @db.Decimal(12, 6)
+  /// Chave de idempotência do pedido (X-Idempotency-Key): repetir não gasta nem cobra outra vez
+  requestKey   String?  @unique
+  /// A resposta dada a esse pedido (para a devolver igual quando se repete)
+  result       Json?
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([createdAt])
+}
+
+/// Utilização por pessoa, funcionalidade e período de quota (o período
+/// renova pelo aniversário da ativação do plano, não pelo dia 1).
+model UsageCounter {
+  id          String   @id @default(uuid())
+  userId      String
+  /// questions | scans | forecasts | …
+  feature     String   @db.VarChar(40)
+  periodStart DateTime
+  periodEnd   DateTime
+  plan        String
+  used        Int      @default(0)
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, feature, periodStart])
+  @@index([userId])
+}
+
+/// Movimentos de créditos de IA (compra, oferta, gasto, devolução), para
+/// nunca contar duas vezes a mesma compra.
+model AiCreditEvent {
+  id        String   @id @default(uuid())
+  userId    String
+  /// + créditos entram, − créditos saem
+  delta     Int
+  /// PURCHASE | GRANT | USE | REFUND | PROMO
+  reason    String   @db.VarChar(16)
+  productId String?
+  /// Id do evento da loja ou outra chave que não se pode repetir
+  eventId   String?  @unique
+  note      String?  @db.VarChar(200)
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+/// Investimentos: o que se pôs e o que vale agora (atualizado à mão).
+model Investment {
+  id           String    @id @default(uuid())
+  userId       String
+  name         String    @db.VarChar(80)
+  /// STOCK | ETF | FUND | CRYPTO | BOND | DEPOSIT | REAL_ESTATE | OTHER
+  type         String    @default("OTHER") @db.VarChar(16)
+  currency     String    @db.VarChar(3)
+  invested     Decimal   @default(0) @db.Decimal(18, 2)
+  currentValue Decimal   @default(0) @db.Decimal(18, 2)
+  units        Decimal?  @db.Decimal(18, 6)
+  /// Rendimento anual esperado em % (para a projeção de dividendos e juros)
+  expectedYield Decimal? @db.Decimal(8, 3)
+  note         String?   @db.VarChar(300)
+  accountId    String?
+  isActive     Boolean   @default(true)
+  valuedAt     DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dividends    Dividend[]
+
+  @@index([userId])
+}
+
+/// Dividendos e juros: os recebidos (com data) e os previstos (projeção).
+model Dividend {
+  id            String     @id @default(uuid())
+  investmentId  String
+  userId        String
+  amount        Decimal    @db.Decimal(18, 2)
+  currency      String     @db.VarChar(3)
+  date          DateTime   @db.Date
+  /// true = projeção (ainda não entrou); false = recebido
+  expected      Boolean    @default(false)
+  note          String?    @db.VarChar(200)
+  transactionId String?
+  createdAt     DateTime   @default(now())
+  investment    Investment @relation(fields: [investmentId], references: [id], onDelete: Cascade)
+  user          User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, date])
+  @@index([investmentId])
+}
+
+/// Ligação de um número de WhatsApp a uma conta (integração oficial da Meta).
+model WhatsappLink {
+  id          String    @id @default(uuid())
+  userId      String    @unique
+  /// Número em formato internacional sem "+" (como a Meta o manda)
+  phone       String?   @unique @db.VarChar(20)
+  /// Código que a pessoa manda por WhatsApp para ligar o número
+  linkCode    String?   @unique @db.VarChar(12)
+  linkCodeExpiresAt DateTime?
+  consentAt   DateTime?
+  linkedAt    DateTime?
+  isActive    Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// Um movimento à espera de confirmação (vindo do WhatsApp ou de uma importação).
+model PendingTransaction {
+  id           String    @id @default(uuid())
+  userId       String
+  /// WHATSAPP | IMPORT
+  source       String    @db.VarChar(16)
+  /// Id da mensagem ou da linha de origem (nunca se trata duas vezes)
+  sourceId     String?   @unique
+  type         String    @default("EXPENSE") @db.VarChar(10)
+  amount       Decimal?  @db.Decimal(18, 2)
+  currency     String?   @db.VarChar(3)
+  date         DateTime? @db.Date
+  description  String?   @db.VarChar(140)
+  merchant     String?   @db.VarChar(80)
+  categoryKey  String?   @db.VarChar(30)
+  attachmentId String?
+  items        Json?
+  rawText      String?   @db.VarChar(2000)
+  /// PENDING | CONFIRMED | DISCARDED
+  status       String    @default("PENDING") @db.VarChar(12)
+  transactionId String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, createdAt])
+}
+
+/// Uma importação de CSV/XLSX: o ficheiro lido fica aqui até se confirmar.
+model ImportBatch {
+  id          String   @id @default(uuid())
+  userId      String
+  fileName    String   @db.VarChar(160)
+  columns     Json
+  rows        Json
+  mapping     Json?
+  rowCount    Int
+  /// PREVIEW | DONE
+  status      String   @default("PREVIEW") @db.VarChar(12)
+  imported    Int      @default(0)
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+/// Bancos e carteiras de referência para as contas manuais (só o logótipo).
+model Institution {
+  id        String   @id @default(uuid())
+  name      String   @db.VarChar(80)
+  /// País onde é mais usado (null = em todo o lado)
+  country   String?  @db.VarChar(2)
+  logoUrl   String?
+  /// Ficheiro guardado por nós (quando o logótipo foi carregado)
+  logoKey   String?
+  website   String?
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([country])
+}
+
+/// Sugestões, problemas e outras mensagens de quem usa a app.
+model Feedback {
+  id         String   @id @default(uuid())
+  userId     String
+  /// SUGGESTION | PROBLEM | OTHER
+  kind       String   @db.VarChar(16)
+  message    String   @db.VarChar(2000)
+  appVersion String?  @db.VarChar(40)
+  platform   String?  @db.VarChar(16)
+  /// NEW | SEEN | DONE
+  status     String   @default("NEW") @db.VarChar(16)
+  adminNote  String?  @db.VarChar(500)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+}
+
+model PriceRecord {
+  id             String   @id @default(uuid())
+  userId         String
+  productName    String
+  /// Nome em minúsculas e sem acentos (para juntar o histórico)
+  normalizedName String
+  brand          String?
+  price          Decimal  @db.Decimal(18, 2)
+  currency       String   @db.VarChar(3)
+  quantity       Decimal? @db.Decimal(12, 3)
+  /// un | kg | g | l | ml
+  unit           String?
+  storeName      String?
+  barcode        String?
+  date           DateTime @db.Date
+  attachmentId   String?  @unique
+  createdAt      DateTime @default(now())
+
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  attachment Attachment? @relation(fields: [attachmentId], references: [id], onDelete: SetNull)
+
+  @@index([userId, normalizedName])
+}

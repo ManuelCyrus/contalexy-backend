@@ -1,0 +1,18 @@
+# Base de dados para desenvolvimento: docker compose up -d
+# O nome do projeto fica fixo: assim a pasta pode mudar de nome (antes chamava-se
+# rumo-backend) e continua a ser a MESMA base de dados, sem criar outra.
+name: rumo-backend
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: rumo
+      POSTGRES_PASSWORD: rumo
+      POSTGRES_DB: rumo
+    ports:
+      - "5432:5432"
+    volumes:
+      - rumo_pg:/var/lib/postgresql/data
+volumes:
+  rumo_pg:
