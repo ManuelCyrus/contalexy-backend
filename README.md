@@ -307,7 +307,3 @@ Todas as rotas em `/v1`, com `Authorization: Bearer <accessToken>` (exceto as p�
 - **Mensagens**: mensagens curtas (até 1000 caracteres) na conversa de cada Space e a dois. Não há WebSockets: a app pede "só as novas" (`after`) de poucos em poucos segundos enquanto a conversa está aberta. Abrir a conversa dá-a por lida. Os avisos juntam-se **um por conversa** (com `count`), em vez de um por mensagem; o push respeita a preferência `messages`. Apagar uma mensagem tira o texto da base de dados e deixa só o lugar; ao apagar a conta, vão as mensagens que a pessoa escreveu e as conversas a dois em que estava.
 
 Câmbios: [ExchangeRate-API](https://www.exchangerate-api.com) (open.er-api.com), atualizados todos os dias.
-
-
-
-

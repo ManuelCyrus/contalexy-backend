@@ -20,8 +20,10 @@ docker network inspect "$NETWORK" > /dev/null 2>&1 || fail "A rede $NETWORK não
 
 if [ "${1:-}" != "--no-build" ] && [ "${1:-}" != "--no-pull" ] && [ -d "$APP_DIR/.git" ]; then
   # O .env e os uploads não estão no git (.gitignore): o pull nunca lhes toca.
-  info "A ir buscar o código novo ao GitHub ($(git rev-parse --abbrev-ref HEAD))"
-  git pull --ff-only || fail "O git pull falhou (há alterações feitas à mão nesta pasta?). Vê 'git status'; a versão em uso continua igual."
+  # O pull corre como o dono da pasta (que tem a chave SSH do GitHub), não como root.
+  OWNER="$(stat -c %U "$APP_DIR")"
+  info "A ir buscar o código novo ao GitHub (como $OWNER)"
+  if [ "$OWNER" = root ]; then git pull --ff-only; else runuser -u "$OWNER" -- git -C "$APP_DIR" pull --ff-only; fi || fail "O git pull falhou (há alterações feitas à mão nesta pasta?). Vê 'git status'; a versão em uso continua igual."
   # O próprio deploy pode ter mudado com o pull: corre a versão nova dele.
   exec bash "$DEPLOY_DIR/deploy.sh" --no-pull
 fi
@@ -30,7 +32,7 @@ if [ "${1:-}" = "--no-build" ]; then
   TAG="${2:?Indica a TAG da imagem}"
   docker image inspect "$IMAGE:$TAG" > /dev/null 2>&1 || fail "Não existe a imagem $IMAGE:$TAG."
 else
-  REV="$(git rev-parse --short HEAD 2>/dev/null || true)"
+  REV="$(git -c safe.directory="$APP_DIR" rev-parse --short HEAD 2>/dev/null || true)"
   TAG="$(date +%Y%m%d-%H%M%S)${REV:+-$REV}"
   info "A construir $IMAGE:$TAG"
   docker build -t "$IMAGE:$TAG" -t "$IMAGE:latest" .

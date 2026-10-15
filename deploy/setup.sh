@@ -13,17 +13,51 @@ need_env
 mkdir -p "$STATE_DIR"
 
 # --- 1) Programas -----------------------------------------------------------
+# Funciona em Debian/Ubuntu (apt) e em Rocky/Alma/RHEL/Fedora/CentOS (dnf).
+if command -v apt-get > /dev/null; then PKG=apt; elif command -v dnf > /dev/null; then PKG=dnf; else fail "Sistema não suportado (sem apt nem dnf)."; fi
+. /etc/os-release 2>/dev/null || true
+
 if ! command -v docker > /dev/null; then
   info "A instalar o Docker"
-  curl -fsSL https://get.docker.com | sh
+  if [ "$PKG" = apt ]; then
+    curl -fsSL https://get.docker.com | sh
+  else
+    dnf -y install dnf-plugins-core
+    if [ "${ID:-}" = fedora ]; then repo=fedora; else repo=rhel; fi
+    dnf config-manager --add-repo "https://download.docker.com/linux/$repo/docker-ce.repo" 2>/dev/null \
+      || dnf config-manager addrepo --from-repofile="https://download.docker.com/linux/$repo/docker-ce.repo"
+    dnf -y install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  fi
 fi
+systemctl enable --now docker > /dev/null 2>&1 || true
 docker compose version > /dev/null 2>&1 || fail "Falta o 'docker compose'. Instala o pacote docker-compose-plugin."
-if ! command -v nginx > /dev/null || ! command -v certbot > /dev/null; then
-  info "A instalar nginx e certbot"
-  apt-get update -y
-  apt-get install -y nginx certbot python3-certbot-nginx curl
+
+if ! command -v nginx > /dev/null || ! command -v certbot > /dev/null || ! command -v git > /dev/null; then
+  info "A instalar nginx, certbot e git"
+  if [ "$PKG" = apt ]; then
+    apt-get update -y
+    apt-get install -y nginx certbot python3-certbot-nginx curl git
+  else
+    # O certbot vem do EPEL em Rocky/Alma/RHEL (no Fedora já está nos repositórios).
+    [ "${ID:-}" = fedora ] || dnf -y install epel-release || true
+    dnf -y install nginx certbot python3-certbot-nginx curl git
+  fi
 fi
-systemctl enable --now docker nginx > /dev/null 2>&1 || true
+systemctl enable --now nginx > /dev/null 2>&1 || true
+
+# SELinux (Rocky/Alma/RHEL/Fedora): deixa o nginx ligar-se às portas da API.
+if command -v getenforce > /dev/null && [ "$(getenforce)" != Disabled ]; then
+  setsebool -P httpd_can_network_connect 1 || true
+fi
+# Firewall: abrir http e https (e manter o ssh).
+if command -v firewall-cmd > /dev/null && systemctl is-active --quiet firewalld; then
+  firewall-cmd --permanent --add-service=ssh --add-service=http --add-service=https > /dev/null
+  firewall-cmd --reload > /dev/null
+  ok "firewalld: ssh, http e https abertos"
+elif command -v ufw > /dev/null && ufw status | grep -q active; then
+  ufw allow OpenSSH > /dev/null; ufw allow 'Nginx Full' > /dev/null || { ufw allow 80/tcp; ufw allow 443/tcp; } > /dev/null
+  ok "ufw: ssh, http e https abertos"
+fi
 
 # --- 2) Confirmar o .env ----------------------------------------------------
 grep -q '^NODE_ENV=production' "$ENV_FILE" || info "Aviso: põe NODE_ENV=production no .env."
