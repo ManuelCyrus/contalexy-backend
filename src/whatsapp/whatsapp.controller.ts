@@ -1,5 +1,5 @@
-import { Body, Controller, Delete, Get, Headers, HttpCode, Param, ParseUUIDPipe, Post, Query, Req } from '@nestjs/common';
-import type { Request } from 'express';
+import { Body, Controller, Delete, Get, Headers, HttpCode, Param, ParseUUIDPipe, Post, Query, Req, Res } from '@nestjs/common';
+import type { Request, Response } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { AuthUser, CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
@@ -37,8 +37,9 @@ export class WhatsappController {
   /// Confirmação do endereço pela Meta.
   @Public()
   @Get('webhook')
-  verify(@Query('hub.mode') mode?: string, @Query('hub.verify_token') token?: string, @Query('hub.challenge') challenge?: string) {
-    return this.whatsapp.verify(mode, token, challenge);
+  /// A Meta espera o hub.challenge em texto simples (sem o envelope { success, data }).
+  verify(@Res() res: Response, @Query('hub.mode') mode?: string, @Query('hub.verify_token') token?: string, @Query('hub.challenge') challenge?: string) {
+    res.status(200).type('text/plain').send(this.whatsapp.verify(mode, token, challenge));
   }
 
   /// Mensagens recebidas (assinadas com o App Secret).
