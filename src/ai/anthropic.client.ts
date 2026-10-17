@@ -45,7 +45,7 @@ export class AnthropicClient {
           max_tokens: input.maxTokens ?? 1024,
           system: input.system,
           messages: input.messages,
-          ...(input.temperature !== undefined ? { temperature: input.temperature } : {}),
+          // A temperatura não é enviada: os modelos mais recentes recusam o parâmetro.
         }),
         signal: AbortSignal.timeout(60_000),
       });

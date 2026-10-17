@@ -35,6 +35,8 @@ const REPLIES = {
     scanFailed: 'Não consegui ler a fatura. Tenta outra foto, mais nítida.',
     quota: 'A leitura de faturas por IA está no limite deste período. Podes escrever o valor à mão: "12,50 café".',
     dailyLimit: 'Chegaste ao limite de mensagens de hoje. Amanhã volta a funcionar; até lá regista na app.',
+    thanks: 'De nada! Quando quiseres, manda outra despesa ou a foto de uma fatura.',
+    hello: 'Olá! Manda uma despesa, por exemplo "12,50 café", ou a foto de uma fatura, e eu anoto.',
   },
   en: {
     notLinked: 'This number is not linked to a Contalexy account yet. In the app: Settings > WhatsApp > Link, and send the code here.',
@@ -45,6 +47,8 @@ const REPLIES = {
     scanFailed: 'Could not read the receipt. Try another, sharper photo.',
     quota: 'AI receipt reading reached its limit for this period. You can type the amount: "12.50 coffee".',
     dailyLimit: 'You reached today’s message limit. It works again tomorrow; until then, use the app.',
+    thanks: 'You are welcome! Send another expense or a photo of a receipt whenever you like.',
+    hello: 'Hi! Send an expense, e.g. "12.50 coffee", or a photo of a receipt, and I will note it.',
   },
 };
 
@@ -218,11 +222,13 @@ export class WhatsappService {
     if (!text) return;
     const parsed = parseMoneyMessage(text);
     if (!parsed) {
-      await this.reply(phone, this.t(lang, 'notUnderstood'));
+      const small = smallTalk(text);
+      await this.reply(phone, this.t(lang, small ?? 'notUnderstood'));
       return;
     }
-    const created = await this.pending.create(user.id, { source: 'WHATSAPP', sourceId: `wa:${message.id}`, type: parsed.type, amount: parsed.amount, currency: user.currency, date: todayIn(user.timezone), description: parsed.description, rawText: text });
-    if (created.created) await this.announce(user.id, lang, phone, parsed.amount, user.currency, parsed.description ?? '');
+    const currency = parsed.currency ?? user.currency;
+    const created = await this.pending.create(user.id, { source: 'WHATSAPP', sourceId: `wa:${message.id}`, type: parsed.type, amount: parsed.amount, currency, date: todayIn(user.timezone), description: parsed.description, rawText: text });
+    if (created.created) await this.announce(user.id, lang, phone, parsed.amount, currency, parsed.description ?? '');
   }
 
   private async announce(userId: string, lang: string, phone: string, amount: number, currency: string, what: string) {
@@ -260,15 +266,43 @@ export class WhatsappService {
   }
 }
 
-/// "12,50 café", "café 12.50", "recebi 100 freelance", "+100 salário" → valor, tipo e descrição.
-export function parseMoneyMessage(text: string): { amount: number; type: 'INCOME' | 'EXPENSE'; description: string | null } | null {
+/// Moedas escritas por extenso ou com símbolo → código ISO.
+const CURRENCY_WORDS: Array<[RegExp, string]> = [
+  [/^(€|eur|euros?)$/i, 'EUR'],
+  [/^(r\$|brl|reais|real)$/i, 'BRL'],
+  [/^(kz|akz|aoa|kwanzas?)$/i, 'AOA'],
+  [/^(\$|us\$|usd|d[oó]lar(es)?|dollars?)$/i, 'USD'],
+  [/^(£|gbp|libras?|pounds?)$/i, 'GBP'],
+];
+const CURRENCY_TOKEN = '€|eur|euros?|r\\$|brl|reais|real|kz|akz|aoa|kwanzas?|us\\$|\\$|usd|d[oó]lar(?:es)?|dollars?|£|gbp|libras?|pounds?';
+
+function currencyOf(token: string | undefined): string | null {
+  if (!token) return null;
+  return CURRENCY_WORDS.find(([re]) => re.test(token.trim()))?.[1] ?? null;
+}
+
+/// "12,50 café", "café 12.50", "recebi 100 freelance", "+100 salário",
+/// "donuts de 0,40 euros" → valor, tipo, descrição e moeda (se foi escrita).
+export function parseMoneyMessage(text: string): { amount: number; type: 'INCOME' | 'EXPENSE'; description: string | null; currency: string | null } | null {
   const clean = text.replace(/\s+/g, ' ').trim();
-  const m = clean.match(/(^|\s)([+-]?)(\d{1,7}(?:[.,]\d{1,2})?)\s*(€|eur|r\$|brl|\$|usd|kz)?(?=\s|$)/i);
+  const re = new RegExp(`(^|\\s)([+-]?)(?:(${CURRENCY_TOKEN})\\s*)?(\\d{1,7}(?:[.,]\\d{1,2})?)\\s*(${CURRENCY_TOKEN})?(?=[\\s.,!?]|$)`, 'i');
+  const m = clean.match(re);
   if (!m) return null;
-  const amount = Math.round(Number(m[3].replace(',', '.')) * 100) / 100;
+  const amount = Math.round(Number(m[4].replace(',', '.')) * 100) / 100;
   if (!Number.isFinite(amount) || amount <= 0) return null;
-  const rest = (clean.slice(0, m.index) + ' ' + clean.slice((m.index ?? 0) + m[0].length)).replace(/\s+/g, ' ').trim();
+  const currency = currencyOf(m[5]) ?? currencyOf(m[3]);
+  let rest = (clean.slice(0, m.index) + ' ' + clean.slice((m.index ?? 0) + m[0].length)).replace(/\s+/g, ' ').trim();
+  // "donuts de 0,40" / "0,40 em donuts" / "5 for lunch": tira as ligações soltas.
+  rest = rest.replace(/\s+(de|do|da|por|em|com|of|for|on)$/i, '').replace(/^(de|do|da|por|em|com|of|for|on)\s+/i, '').replace(/[.!?]+$/, '').trim();
   const income = m[2] === '+' || /^(recebi|receita|entrou|ganhei|received|income|got|einnahme|reçu)\b/i.test(rest);
   const description = rest.replace(/^(recebi|receita|entrou|ganhei|received|income|got|einnahme|reçu|gastei|paguei|spent|paid|despesa)\b/i, '').trim();
-  return { amount, type: income ? 'INCOME' : 'EXPENSE', description: description ? description.slice(0, 140) : null };
+  return { amount, type: income ? 'INCOME' : 'EXPENSE', description: description ? description.slice(0, 140) : null, currency };
+}
+
+/// Agradecimentos e cumprimentos: responde com simpatia em vez de "não percebi".
+export function smallTalk(text: string): 'thanks' | 'hello' | null {
+  const t = text.trim().toLowerCase().replace(/[!.?\s]+$/g, '');
+  if (/^(obrigad[oa]|obg|brigad[oa]|valeu|thanks?|thank you|thx|merci|danke|ok|okay|certo|fixe|top|👍)( .*)?$/.test(t)) return 'thanks';
+  if (/^(ol[aá]|oi|bom dia|boa tarde|boa noite|hello|hi|hey|bonjour|hallo)( .*)?$/.test(t)) return 'hello';
+  return null;
 }
