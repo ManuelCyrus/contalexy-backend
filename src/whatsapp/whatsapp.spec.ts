@@ -1,4 +1,4 @@
-import { parseMoneyMessage, smallTalk } from './whatsapp.service';
+import { looksLikeQuestion, parseMoneyMessage, smallTalk } from './whatsapp.service';
 
 describe('mensagens de WhatsApp', () => {
   it('percebe valor, tipo e descrição em várias formas', () => {
@@ -24,5 +24,13 @@ describe('mensagens de WhatsApp', () => {
     expect(smallTalk('Olá')).toBe('hello');
     expect(smallTalk('bom dia')).toBe('hello');
     expect(smallTalk('qualquer coisa')).toBeNull();
+  });
+
+  it('reconhece perguntas para o assistente', () => {
+    expect(looksLikeQuestion('Quanto já gastei este mês ?')).toBe(true);
+    expect(looksLikeQuestion('quanto gastei em 2026')).toBe(true);
+    expect(looksLikeQuestion('How much did I spend?')).toBe(true);
+    expect(looksLikeQuestion('12,50 café')).toBe(false);
+    expect(looksLikeQuestion('Olá?')).toBe(false);
   });
 });

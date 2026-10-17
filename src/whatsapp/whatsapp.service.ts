@@ -36,7 +36,9 @@ const REPLIES = {
     quota: 'A leitura de faturas por IA está no limite deste período. Podes escrever o valor à mão: "12,50 café".',
     dailyLimit: 'Chegaste ao limite de mensagens de hoje. Amanhã volta a funcionar; até lá regista na app.',
     thanks: 'De nada! Quando quiseres, manda outra despesa ou a foto de uma fatura.',
-    hello: 'Olá! Manda uma despesa, por exemplo "12,50 café", ou a foto de uma fatura, e eu anoto.',
+    hello: 'Olá! Manda uma despesa, por exemplo "12,50 café", ou a foto de uma fatura, e eu anoto. Também podes perguntar, por exemplo "quanto gastei este mês?".',
+    askFailed: 'Agora não consegui responder. Tenta daqui a pouco ou pergunta na app, no Assistente.',
+    askLimit: 'Chegaste ao limite de perguntas à IA deste período. Vê os créditos na app, em Mais > Premium.',
   },
   en: {
     notLinked: 'This number is not linked to a Contalexy account yet. In the app: Settings > WhatsApp > Link, and send the code here.',
@@ -48,7 +50,9 @@ const REPLIES = {
     quota: 'AI receipt reading reached its limit for this period. You can type the amount: "12.50 coffee".',
     dailyLimit: 'You reached today’s message limit. It works again tomorrow; until then, use the app.',
     thanks: 'You are welcome! Send another expense or a photo of a receipt whenever you like.',
-    hello: 'Hi! Send an expense, e.g. "12.50 coffee", or a photo of a receipt, and I will note it.',
+    hello: 'Hi! Send an expense, e.g. "12.50 coffee", or a photo of a receipt, and I will note it. You can also ask, e.g. "how much did I spend this month?".',
+    askFailed: 'I could not answer right now. Try again soon or ask in the app, in the Assistant.',
+    askLimit: 'You reached the AI question limit for this period. See credits in the app, under More > Premium.',
   },
 };
 
@@ -220,6 +224,18 @@ export class WhatsappService {
     }
 
     if (!text) return;
+    // Perguntas ("quanto gastei este mês?") vão para o assistente, antes de
+    // procurar um valor (o "2026" de "quanto gastei em 2026?" não é despesa).
+    if (looksLikeQuestion(text)) {
+      try {
+        const answer = (await this.ai.chat(user.id, [{ role: 'user', content: text.slice(0, 2000) }], `wa:${message.id}`)) as { reply?: string };
+        await this.reply(phone, (answer.reply ?? '').slice(0, 4000) || this.t(lang, 'askFailed'));
+      } catch (err) {
+        const code = (err as { code?: string }).code;
+        await this.reply(phone, this.t(lang, code === 'AI_QUOTA_REACHED' || code === 'AI_RATE_LIMIT' || code === 'AI_BUDGET_REACHED' ? 'askLimit' : 'askFailed'));
+      }
+      return;
+    }
     const parsed = parseMoneyMessage(text);
     if (!parsed) {
       const small = smallTalk(text);
@@ -297,6 +313,13 @@ export function parseMoneyMessage(text: string): { amount: number; type: 'INCOME
   const income = m[2] === '+' || /^(recebi|receita|entrou|ganhei|received|income|got|einnahme|reçu)\b/i.test(rest);
   const description = rest.replace(/^(recebi|receita|entrou|ganhei|received|income|got|einnahme|reçu|gastei|paguei|spent|paid|despesa)\b/i, '').trim();
   return { amount, type: income ? 'INCOME' : 'EXPENSE', description: description ? description.slice(0, 140) : null, currency };
+}
+
+/// Uma pergunta ao assistente: termina em "?" ou começa por uma palavra de pergunta.
+export function looksLikeQuestion(text: string): boolean {
+  const t = text.trim().toLowerCase();
+  if (t.endsWith('?')) return !/^(ol[aá]|oi|tudo bem)/.test(t) || t.split(/\s+/).length > 3;
+  return /^(quanto|quantos|quanta|quantas|como|qual|quais|onde|quando|porque|porqu[eê]|o que|posso|devo|consigo|mostra|diz-me|how|what|which|when|where|why|can i|should i|show me|combien|comment|wie|was|wieviel)\b/.test(t);
 }
 
 /// Agradecimentos e cumprimentos: responde com simpatia em vez de "não percebi".
