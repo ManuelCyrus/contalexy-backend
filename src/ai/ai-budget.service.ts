@@ -39,30 +39,40 @@ export class AiBudgetService {
     return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
   }
 
-  /// Custo deste mês (a soma é guardada um minuto para não pesar em cada pedido).
+  /// Custo deste mês do plano grátis (é o que o teto limita; o de quem paga
+  /// está nos limites de cada plano). Guardado um minuto para não pesar.
   async monthCost(force = false): Promise<number> {
     const since = this.monthStart();
     const month = since.toISOString().slice(0, 7);
     if (!force && this.cache && this.cache.month === month && Date.now() - this.cache.at < 60_000) return this.cache.cost;
-    const sum = await this.prisma.aiUsage.aggregate({ where: { createdAt: { gte: since } }, _sum: { costUsd: true } });
+    const sum = await this.prisma.aiUsage.aggregate({ where: { createdAt: { gte: since }, free: true }, _sum: { costUsd: true } });
     const cost = Number(sum._sum.costUsd ?? 0);
     this.cache = { month, at: Date.now(), cost };
     return cost;
   }
 
-  /// Junta um pedido acabado de fazer à soma em memória.
+  /// Custo total deste mês (todos os planos), só para mostrar.
+  async totalMonthCost(): Promise<number> {
+    const sum = await this.prisma.aiUsage.aggregate({ where: { createdAt: { gte: this.monthStart() } }, _sum: { costUsd: true } });
+    return Number(sum._sum.costUsd ?? 0);
+  }
+
+  /// Junta um pedido do plano grátis acabado de fazer à soma em memória.
   add(cost: number) {
     if (this.cache) this.cache.cost += cost;
   }
 
   async state() {
     const budget = env().AI_MONTHLY_BUDGET_USD;
-    const cost = await this.monthCost();
+    const [freeCost, total] = await Promise.all([this.monthCost(), this.totalMonthCost()]);
     return {
       budgetUsd: budget,
-      costUsd: Math.round(cost * 10000) / 10000,
-      percent: budget > 0 ? Math.round((cost / budget) * 1000) / 10 : null,
-      level: limitLevel(cost, budget),
+      /// Custo total do mês (todos os planos)
+      costUsd: Math.round(total * 10000) / 10000,
+      /// Custo do plano grátis (o que conta para o teto)
+      freeCostUsd: Math.round(freeCost * 10000) / 10000,
+      percent: budget > 0 ? Math.round((freeCost / budget) * 1000) / 10 : null,
+      level: limitLevel(freeCost, budget),
     };
   }
 }

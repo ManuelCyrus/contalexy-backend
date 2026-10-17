@@ -1465,6 +1465,8 @@ model AiUsage {
   outputTokens Int      @default(0)
   /// Custo estimado do pedido em USD (para o teto mensal de IA)
   costUsd      Decimal  @default(0) @db.Decimal(12, 6)
+  /// Pedido de quem está no plano grátis e sem crédito comprado (é o que conta para o teto mensal)
+  free         Boolean  @default(false)
   /// Chave de idempotência do pedido (X-Idempotency-Key): repetir não gasta nem cobra outra vez
   requestKey   String?  @unique
   /// A resposta dada a esse pedido (para a devolver igual quando se repete)
@@ -1474,6 +1476,7 @@ model AiUsage {
 
   @@index([userId, createdAt])
   @@index([createdAt])
+  @@index([free, createdAt])
 }
 
 /// Utilização por pessoa, funcionalidade e período de quota (o período

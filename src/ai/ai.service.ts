@@ -234,6 +234,7 @@ export class AiService {
     }
     // A quota do período; quando acaba, um crédito comprado.
     let reservation: { release: () => Promise<void> };
+    let paidWithCredit = false;
     try {
       reservation = await this.quota.reserve(userId, bucket, BUCKETS[bucket].limit);
     } catch (err) {
@@ -244,6 +245,7 @@ export class AiService {
         throw ApiException.forbidden('AI_QUOTA_REACHED', err.params, { ...details, credits: 0, creditProducts: creditProducts() });
       }
       reservation = { release: credit.release };
+      paidWithCredit = true;
     }
     let usageId: string | null = null;
     let recorded = false;
@@ -253,9 +255,10 @@ export class AiService {
       record: async (model: string, inputTokens: number, outputTokens: number) => {
         recorded = true;
         const cost = estimateCost(model, inputTokens, outputTokens);
-        const row = await this.prisma.aiUsage.create({ data: { userId, kind, inputTokens, outputTokens, costUsd: cost.toFixed(6), requestKey: key } });
+        const free = ent.rank === 0 && !paidWithCredit;
+        const row = await this.prisma.aiUsage.create({ data: { userId, kind, inputTokens, outputTokens, costUsd: cost.toFixed(6), requestKey: key, free } });
         usageId = row.id;
-        this.budget.add(cost);
+        if (free) this.budget.add(cost);
       },
       /// Guarda a resposta para a devolver igual se o pedido se repetir.
       finish: async <T,>(value: T): Promise<T> => {
