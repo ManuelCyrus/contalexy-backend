@@ -120,6 +120,13 @@ export class AdminController {
     return this.admin.setRole(user.userId, id, dto.role, dto.areas ?? []);
   }
 
+  /// Apagar a conta de vez (por exemplo, contas criadas pelos robôs de teste da Google Play).
+  @Throttle(THROTTLE.strict)
+  @Delete('users/:id')
+  removeUser(@CurrentUser() user: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.admin.deleteUser(user.userId, id);
+  }
+
   @Get('promo-codes')
   promoCodes() {
     return this.promo.list();

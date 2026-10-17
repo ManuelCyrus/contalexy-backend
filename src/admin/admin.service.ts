@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { UsersService } from '../users/users.service';
 import { PrismaService } from '../database/prisma.service';
 import { ACCESS_STATUSES, EntitlementsService } from '../billing/entitlements.service';
 import { SubscriptionsService } from '../billing/subscriptions.service';
@@ -54,6 +55,7 @@ export class AdminService {
     private readonly subscriptions: SubscriptionsService,
     private readonly exchange: ExchangeService,
     private readonly budget: AiBudgetService,
+    private readonly usersService: UsersService,
   ) {}
 
   /// A melhor assinatura válida de cada pessoa (o plano que tem agora) e de onde vem.
@@ -420,6 +422,17 @@ export class AdminService {
     }
     const updated = await this.prisma.user.update({ where: { id: userId }, data: { role, adminAreas: role === 'ADMIN' ? [...new Set(areas)] : [] }, select: { id: true, role: true, email: true, adminAreas: true } });
     return { id: updated.id, role: updated.role, isAdmin: isAdminUser(updated), adminAreas: adminAreasOf(updated) };
+  }
+
+  /// Apaga já a conta e todos os dados (sem os 30 dias de espera do pedido
+  /// feito pela própria pessoa). Administradores têm de ser despromovidos antes.
+  async deleteUser(adminId: string, userId: string) {
+    if (userId === adminId) throw ApiException.badRequest('INVALID_REQUEST');
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true, email: true, role: true } });
+    if (!user) throw ApiException.notFound('USER_NOT_FOUND');
+    if (user.role === 'ADMIN' || isSuperAdminEmail(user.email)) throw ApiException.forbidden('ADMIN_PROTECTED');
+    await this.usersService.purgeAccount(userId);
+    return { deleted: true };
   }
 
   /// Uso e custo estimado da IA este mês (e o teto global).
